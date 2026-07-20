@@ -51,7 +51,7 @@ die()     { echo -e "${RED}✗  ERROR: $*${NC}" >&2; exit 1; }
 NON_INTERACTIVE=false
 OVERWRITE_ENV=false
 INSTALL_DIR=""
-REPO_URL="https://github.com/your-org/peoplesoft-diff-veza"
+REPO_URL="https://github.com/andrewmusto-git/PeopleSoftDiff"
 BRANCH="main"
 
 while [[ $# -gt 0 ]]; do
