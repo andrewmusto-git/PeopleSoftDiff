@@ -415,23 +415,19 @@ def build_oaa_payload(
     app.add_custom_permission("department_member",  [OAAPermission.DataRead])
 
     # --- Custom property definitions for local users ---
-    try:
-        udefs = app.property_definitions.local_user
-        for prop_name in (
-            "emplid",           "empl_rcd",          "empl_status_code",
-            "empl_status_desc", "empl_type",          "per_org",
-            "hire_date",        "last_date_worked",   "department_id",
-            "department_name",  "company",            "company_name",
-            "business_unit",    "location",           "position_nbr",
-            "job_code",         "manager_id",         "lan_id",
-            "legacy_lan_id",    "cmi_id",             "reg_region",
-            "segment",          "org_group",          "function_code",
-            "req_it_access",    "legal_hold",         "acquisition",
-        ):
-            udefs.add(prop_name, OAAPropertyType.STRING)
-        log.debug("Registered %d custom user properties", len(list(udefs)))
-    except AttributeError:
-        log.debug("property_definitions API unavailable — custom properties skipped")
+    for prop_name in (
+        "emplid",           "empl_rcd",          "empl_status_code",
+        "empl_status_desc", "empl_type",          "per_org",
+        "hire_date",        "last_date_worked",   "department_id",
+        "department_name",  "company",            "company_name",
+        "business_unit",    "location",           "position_nbr",
+        "job_code",         "manager_id",         "lan_id",
+        "legacy_lan_id",    "cmi_id",             "reg_region",
+        "segment",          "org_group",          "function_code",
+        "req_it_access",    "legal_hold",         "acquisition",
+    ):
+        app.property_definitions.define_local_user_property(prop_name, OAAPropertyType.STRING)
+    log.debug("Registered custom user properties")
 
     # --- Streaming single-pass processing ---
     # Department groups are created lazily on first encounter so we avoid a
@@ -508,37 +504,34 @@ def build_oaa_payload(
                 user.add_group(registered_groups[deptid])
                 user.add_permission("department_member", apply_to_application=True)
 
-            # Custom properties (best-effort; gracefully degraded if API unavailable)
-            try:
-                user.set_property("emplid",            emplid)
-                user.set_property("empl_rcd",          emp.get("EMPL_RCD",           ""))
-                user.set_property("empl_status_code",  empl_status)
-                user.set_property("empl_status_desc",  EMPL_STATUS_DESCRIPTIONS.get(empl_status, empl_status))
-                user.set_property("empl_type",         emp.get("EMPL_TYPE",          ""))
-                user.set_property("per_org",           emp.get("PER_ORG",            ""))
-                user.set_property("hire_date",         emp.get("HIRE_DT",            ""))
-                user.set_property("last_date_worked",  emp.get("LAST_DATE_WORKED",   ""))
-                user.set_property("department_id",     emp.get("DEPTID",             ""))
-                user.set_property("department_name",   emp.get("DESCR",              ""))
-                user.set_property("company",           emp.get("COMPANY",            ""))
-                user.set_property("company_name",      emp.get("DESCR30",            ""))
-                user.set_property("business_unit",     emp.get("BUSINESS_UNIT",      ""))
-                user.set_property("location",          emp.get("LOCATION",           ""))
-                user.set_property("position_nbr",      emp.get("POSITION_NBR",       ""))
-                user.set_property("job_code",          emp.get("JOBCODE",            ""))
-                user.set_property("manager_id",        emp.get("MANAGER_ID",         ""))
-                user.set_property("lan_id",            emp.get("ZPS_LAN_ID",         ""))
-                user.set_property("legacy_lan_id",     emp.get("ZPS_LEG_LANID",      ""))
-                user.set_property("cmi_id",            emp.get("ZPS_CMI_ID",         ""))
-                user.set_property("reg_region",        emp.get("REG_REGION",         ""))
-                user.set_property("segment",           emp.get("ZPS_SEGMENT",        ""))
-                user.set_property("org_group",         emp.get("ZPS_GROUP",          ""))
-                user.set_property("function_code",     emp.get("ZPS_FUNCTION",       ""))
-                user.set_property("req_it_access",     emp.get("ZPS_REQ_IT_ACCESS",  ""))
-                user.set_property("legal_hold",        emp.get("ZPS_LEGAL_HOLD",     ""))
-                user.set_property("acquisition",       emp.get("ZPS_ACQUISITION",    ""))
-            except AttributeError:
-                pass  # set_property not available in this oaaclient build
+            # Custom properties
+            user.set_property("emplid",            emplid)
+            user.set_property("empl_rcd",          emp.get("EMPL_RCD",           ""))
+            user.set_property("empl_status_code",  empl_status)
+            user.set_property("empl_status_desc",  EMPL_STATUS_DESCRIPTIONS.get(empl_status, empl_status))
+            user.set_property("empl_type",         emp.get("EMPL_TYPE",          ""))
+            user.set_property("per_org",           emp.get("PER_ORG",            ""))
+            user.set_property("hire_date",         emp.get("HIRE_DT",            ""))
+            user.set_property("last_date_worked",  emp.get("LAST_DATE_WORKED",   ""))
+            user.set_property("department_id",     emp.get("DEPTID",             ""))
+            user.set_property("department_name",   emp.get("DESCR",              ""))
+            user.set_property("company",           emp.get("COMPANY",            ""))
+            user.set_property("company_name",      emp.get("DESCR30",            ""))
+            user.set_property("business_unit",     emp.get("BUSINESS_UNIT",      ""))
+            user.set_property("location",          emp.get("LOCATION",           ""))
+            user.set_property("position_nbr",      emp.get("POSITION_NBR",       ""))
+            user.set_property("job_code",          emp.get("JOBCODE",            ""))
+            user.set_property("manager_id",        emp.get("MANAGER_ID",         ""))
+            user.set_property("lan_id",            emp.get("ZPS_LAN_ID",         ""))
+            user.set_property("legacy_lan_id",     emp.get("ZPS_LEG_LANID",      ""))
+            user.set_property("cmi_id",            emp.get("ZPS_CMI_ID",         ""))
+            user.set_property("reg_region",        emp.get("REG_REGION",         ""))
+            user.set_property("segment",           emp.get("ZPS_SEGMENT",        ""))
+            user.set_property("org_group",         emp.get("ZPS_GROUP",          ""))
+            user.set_property("function_code",     emp.get("ZPS_FUNCTION",       ""))
+            user.set_property("req_it_access",     emp.get("ZPS_REQ_IT_ACCESS",  ""))
+            user.set_property("legal_hold",        emp.get("ZPS_LEGAL_HOLD",     ""))
+            user.set_property("acquisition",       emp.get("ZPS_ACQUISITION",    ""))
 
         # Release raw page data before fetching the next page
         del page
