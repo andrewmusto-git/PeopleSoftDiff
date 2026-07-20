@@ -284,10 +284,11 @@ def stream_employee_pages(
             "Page %d: %d records fetched (start_row=%d; running total: %d)",
             page_num, len(employees), start_row, total_fetched,
         )
+        ts = datetime.now().strftime("%H:%M:%S")
         print(
-            f"       Page {page_num}: {len(employees):,} records "
-            f"(start_row={start_row}; total so far: {total_fetched:,}) ...",
-            end="\r",
+            f"  [{ts}] Fetched page {page_num}: {len(employees):,} records "
+            f"(rows {start_row}–{start_row + len(employees) - 1}) | "
+            f"Running total: {total_fetched:,}",
             flush=True,
         )
 
@@ -306,8 +307,11 @@ def stream_employee_pages(
         if page_delay > 0:
             time.sleep(page_delay)
 
-    # Clear the \r progress line before the next output
-    print()
+    ts = datetime.now().strftime("%H:%M:%S")
+    print(
+        f"  [{ts}] Fetch complete: {total_fetched:,} total records across {page_num} page(s)",
+        flush=True,
+    )
     log.info(
         "Employee stream complete: %d total records across %d page(s)",
         total_fetched, page_num,
@@ -538,6 +542,25 @@ def build_oaa_payload(
         gc.collect()
         log.debug("Page %d processed and released from memory", page_num)
 
+        ts = datetime.now().strftime("%H:%M:%S")
+        total_users = active_count + inactive_count
+        print(
+            f"  [{ts}] Built page {page_num}: "
+            f"{total_users:,} users added to payload "
+            f"({active_count:,} active, {inactive_count:,} inactive) | "
+            f"{len(registered_groups):,} departments | "
+            f"{skipped_count:,} skipped",
+            flush=True,
+        )
+
+    ts = datetime.now().strftime("%H:%M:%S")
+    total_users = active_count + inactive_count
+    print(
+        f"  [{ts}] Payload build complete: "
+        f"{total_users:,} users | {active_count:,} active | {inactive_count:,} inactive | "
+        f"{len(registered_groups):,} departments | {skipped_count:,} skipped",
+        flush=True,
+    )
     log.info(
         "Payload summary: %d active users, %d inactive users, "
         "%d skipped (empty EMPLID), %d departments (across %d pages)",
