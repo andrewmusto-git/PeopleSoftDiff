@@ -298,15 +298,12 @@ def stream_employee_pages(
 
         yield employees
 
-        is_last_page = len(employees) < page_size
-        if is_last_page:
-            log.info(
-                "Last page detected (returned %d < page_size %d) — stopping pagination",
-                len(employees), page_size,
-            )
-            break
-
-        start_row += page_size
+        # Advance to the next page.
+        # NOTE: We do NOT stop on a short page.  PeopleSoft may return fewer
+        # rows than page_size on any page (e.g. due to a server-side cap) even
+        # when more records remain.  The only reliable end-of-data signal is an
+        # empty response, which is caught at the top of the loop.
+        start_row += len(employees)
 
         if page_delay > 0:
             time.sleep(page_delay)
