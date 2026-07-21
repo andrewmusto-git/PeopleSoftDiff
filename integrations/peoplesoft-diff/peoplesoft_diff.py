@@ -55,6 +55,10 @@ REQUEST_TIMEOUT_SECONDS = 120
 #   - If the PeopleSoft host is fast and well-resourced, raise it (e.g. 3000–5000).
 DEFAULT_PAGE_SIZE = 2000
 
+# Default name for the on-disk staging file written during Phase 1.
+# Each line is a JSON-serialized employee record dict (JSON Lines / JSONL format).
+STAGING_FILE_DEFAULT = "staging_employees.jsonl"
+
 # EMPL_STATUS codes where the employee is considered active for access purposes.
 # A=Active, L=Leave of Absence, P=Leave With Pay, S=Short Work Break
 ACTIVE_STATUS_CODES: frozenset = frozenset({"A", "L", "P", "S"})
@@ -315,6 +319,135 @@ def stream_employee_pages(
     log.info(
         "Employee stream complete: %d total records across %d page(s)",
         total_fetched, page_num,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 1 — Fetch PeopleSoft records to a JSONL staging file
+# ---------------------------------------------------------------------------
+
+def fetch_to_staging(
+    cfg: dict,
+    staging_path: str,
+    page_size: int = DEFAULT_PAGE_SIZE,
+    page_delay: float = 0.0,
+) -> int:
+    """Stream all PeopleSoft records page-by-page and write to a JSONL staging file.
+
+    Each record is written as a single JSON line so the file can be streamed
+    back in Phase 2 without loading it entirely into memory.  The write goes
+    to a temporary path first; on successful completion it is renamed atomically
+    to *staging_path* so a partial fetch never leaves a corrupt staging file
+    behind.
+
+    Returns the total number of records written.
+    """
+    tmp_path = staging_path + ".tmp"
+
+    log.info("Phase 1 — Fetching PeopleSoft records to staging file: %s", staging_path)
+    print(f"\nPhase 1  —  Fetch PeopleSoft records to disk")
+    print(f"  Staging file  : {staging_path}")
+    print(f"  Page size     : {page_size:,} records / page")
+    if page_delay > 0:
+        print(f"  Page delay    : {page_delay}s between pages")
+    print()
+
+    total_written = 0
+
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as fh:
+            for page in stream_employee_pages(cfg, page_size=page_size, page_delay=page_delay):
+                for record in page:
+                    fh.write(json.dumps(record, ensure_ascii=False))
+                    fh.write("\n")
+                    total_written += 1
+                # Flush after every page so data is safe before the next request
+                fh.flush()
+                del page
+                gc.collect()
+    except Exception:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        raise
+
+    # Atomic promotion: temp file -> final staging path
+    os.replace(tmp_path, staging_path)
+
+    ts = datetime.now().strftime("%H:%M:%S")
+    log.info("Phase 1 complete: %d records written to %s", total_written, staging_path)
+    print(f"  [{ts}] Phase 1 complete: {total_written:,} records staged to disk\n")
+    return total_written
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 — Stream records back from the JSONL staging file
+# ---------------------------------------------------------------------------
+
+def stream_staging_pages(
+    staging_path: str,
+    batch_size: int = DEFAULT_PAGE_SIZE,
+) -> Generator[List[dict], None, None]:
+    """Read the JSONL staging file and yield batches of employee-record dicts.
+
+    Reads line-by-line so at most *batch_size* raw records occupy memory at
+    once, regardless of how large the staging file grows.  The yielded batches
+    are the same shape as the pages yielded by *stream_employee_pages*, so the
+    existing *build_oaa_payload* function consumes them unchanged.
+    """
+    log.info(
+        "Phase 2 — Streaming staging file: %s  (batch_size=%d)", staging_path, batch_size
+    )
+
+    total_read = 0
+    batch: List[dict] = []
+    batch_num = 0
+
+    with open(staging_path, "r", encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError as exc:
+                log.warning("Skipping malformed staging line %d: %s", total_read + 1, exc)
+                continue
+
+            batch.append(record)
+            total_read += 1
+
+            if len(batch) >= batch_size:
+                batch_num += 1
+                ts = datetime.now().strftime("%H:%M:%S")
+                print(
+                    f"  [{ts}] Staging batch {batch_num}: "
+                    f"processing {len(batch):,} records "
+                    f"(total read so far: {total_read:,})",
+                    flush=True,
+                )
+                log.debug(
+                    "Staging batch %d: %d records (total: %d)",
+                    batch_num, len(batch), total_read,
+                )
+                yield batch
+                batch = []
+                gc.collect()
+
+    # Yield any remaining records that didn't fill a full batch
+    if batch:
+        batch_num += 1
+        ts = datetime.now().strftime("%H:%M:%S")
+        print(
+            f"  [{ts}] Staging batch {batch_num} (final): "
+            f"processing {len(batch):,} records "
+            f"(total: {total_read:,})",
+            flush=True,
+        )
+        log.debug("Staging batch %d (final): %d records", batch_num, len(batch))
+        yield batch
+
+    log.info(
+        "Staging stream complete: %d records in %d batch(es)", total_read, batch_num
     )
 
 
@@ -706,6 +839,25 @@ def _parse_args() -> argparse.Namespace:
             "on the InsightPoint or PeopleSoft server."
         ),
     )
+    run.add_argument(
+        "--staging-file",
+        metavar="PATH",
+        default=None,
+        help=(
+            f"Path for the JSONL staging file written by Phase 1 and consumed by Phase 2 "
+            f"(default: <script_dir>/{STAGING_FILE_DEFAULT}).  "
+            f"The file persists after the run so Phase 2 can be retried with --skip-fetch."
+        ),
+    )
+    run.add_argument(
+        "--skip-fetch",
+        action="store_true",
+        help=(
+            "Skip Phase 1 (PeopleSoft fetch) and re-use an existing staging file.  "
+            "Useful when the fetch already completed but the Veza push failed and needs "
+            "to be retried without hitting PeopleSoft again."
+        ),
+    )
 
     return parser.parse_args()
 
@@ -718,33 +870,69 @@ def main() -> None:
     args = _parse_args()
     _setup_logging(args.log_level)
 
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    staging_path = args.staging_file or os.path.join(script_dir, STAGING_FILE_DEFAULT)
+
     print("=" * 60)
     print("  PeopleSoft Diff -> Veza OAA Integration")
     print(f"  Provider   : {args.provider_name}")
     print(f"  Datasource : {args.datasource_name}")
     print(f"  Page size  : {args.page_size} records/page")
     print(f"  Page delay : {args.page_delay}s")
+    print(f"  Staging    : {staging_path}")
+    print(f"  Skip fetch : {args.skip_fetch}")
     print(f"  Dry-run    : {args.dry_run}")
     print(f"  Save JSON  : {args.save_json}")
     print("=" * 60)
 
     cfg = load_config(args)
 
-    if args.page_delay > 0:
-        log.info("Page delay enabled: %.1f seconds between PeopleSoft pages", args.page_delay)
+    # ------------------------------------------------------------------
+    # Phase 1 — Fetch all PeopleSoft records to the JSONL staging file
+    # ------------------------------------------------------------------
+    if args.skip_fetch:
+        if not os.path.exists(staging_path):
+            log.error(
+                "--skip-fetch was set but staging file does not exist: %s", staging_path
+            )
+            print(
+                f"ERROR: --skip-fetch was set but staging file not found:\n  {staging_path}\n"
+                "Run without --skip-fetch to fetch fresh data first."
+            )
+            sys.exit(1)
+        staging_size = os.path.getsize(staging_path)
+        log.info(
+            "--skip-fetch: reusing existing staging file: %s (%d bytes)",
+            staging_path, staging_size,
+        )
+        print(
+            f"\nPhase 1  —  Skipped (--skip-fetch)\n"
+            f"  Reusing staging file : {staging_path}\n"
+            f"  File size            : {staging_size:,} bytes\n"
+        )
+    else:
+        if args.page_delay > 0:
+            log.info("Page delay enabled: %.1f seconds between PeopleSoft pages", args.page_delay)
+        fetch_to_staging(
+            cfg,
+            staging_path=staging_path,
+            page_size=args.page_size,
+            page_delay=args.page_delay,
+        )
 
-    employee_pages = stream_employee_pages(
-        cfg,
-        page_size=args.page_size,
-        page_delay=args.page_delay,
-    )
+    # ------------------------------------------------------------------
+    # Phase 2 — Build OAA payload from staging file, then push to Veza
+    # ------------------------------------------------------------------
+    print(f"\nPhase 2  —  Build OAA payload from staging file")
+
+    employee_pages = stream_staging_pages(staging_path, batch_size=args.page_size)
     app = build_oaa_payload(employee_pages, args)
 
     # Sanity check: if the app has no users the stream returned nothing
     user_count = len(getattr(app, "local_users", {}))
     if user_count == 0:
         log.warning("No employee records were processed — nothing to push")
-        print("WARNING: No employee records returned. Verify the API connection and query.")
+        print("WARNING: No employee records returned. Verify the staging file and API connection.")
         sys.exit(0)
 
     push_to_veza(
