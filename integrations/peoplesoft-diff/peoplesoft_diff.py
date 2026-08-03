@@ -42,6 +42,8 @@ log = logging.getLogger(__name__)
 DEFAULT_PROVIDER_NAME = "PeopleSoft HR"
 DEFAULT_DATASOURCE_NAME = "PeopleSoft Differential"
 DEFAULT_QUERY_NAME = "ZPS_SP_DIFFERNTIAL"
+QUERY_DIFFERENTIAL = "ZPS_SP_DIFFERNTIAL"   # delta / changed-records only
+QUERY_FULL_SYNC    = "ZPS_SP_FULL_SYNC"     # all employees (full population)
 
 # PeopleSoft REST Adhoc Query endpoint (relative path, appended to base URL)
 QUERY_ENDPOINT = "/PSIGW/RESTListeningConnector/PSFT_HR/ExecuteAdhocQuery.v1/executeadhocquery"
@@ -932,12 +934,55 @@ def _parse_args() -> argparse.Namespace:
 # Main
 # ---------------------------------------------------------------------------
 
+def _prompt_query_selection(current: str) -> str:
+    """Interactively ask the operator which PeopleSoft query to run.
+
+    Called only when the query was not pre-set via --peoplesoft-query-name
+    or PEOPLESOFT_QUERY_NAME env var (i.e. still equal to the compiled-in
+    default).  Keeps non-interactive / scheduled runs fully automatic.
+    """
+    print()
+    print("  Which PeopleSoft query do you want to run?")
+    print()
+    print(f"  [1]  Differential (delta only)  — {QUERY_DIFFERENTIAL}")
+    print(f"       Returns only records changed since the last sync.")
+    print()
+    print(f"  [2]  Full Sync (all employees)  — {QUERY_FULL_SYNC}")
+    print(f"       Returns every employee record (~100,000+ rows).")
+    print()
+
+    while True:
+        try:
+            choice = input("  Enter 1 or 2: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            sys.exit(0)
+
+        if choice == "1":
+            return QUERY_DIFFERENTIAL
+        if choice == "2":
+            return QUERY_FULL_SYNC
+        print("  Please enter 1 or 2.")
+
+
 def main() -> None:
     args = _parse_args()
     _setup_logging(args.log_level)
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
     staging_path = args.staging_file or os.path.join(script_dir, STAGING_FILE_DEFAULT)
+
+    # ---- Interactive query selection ----------------------------------
+    # Only prompt when the query was not explicitly supplied via CLI or env.
+    # This keeps cron / non-interactive runs fully automatic.
+    env_query = os.getenv("PEOPLESOFT_QUERY_NAME", "").strip()
+    cli_query = args.peoplesoft_query_name
+    if not env_query and cli_query == DEFAULT_QUERY_NAME and not args.skip_fetch:
+        print("=" * 60)
+        print("  PeopleSoft Diff -> Veza OAA Integration")
+        print("=" * 60)
+        args.peoplesoft_query_name = _prompt_query_selection(cli_query)
+    # -------------------------------------------------------------------
 
     print("=" * 60)
     print("  PeopleSoft Diff -> Veza OAA Integration")
