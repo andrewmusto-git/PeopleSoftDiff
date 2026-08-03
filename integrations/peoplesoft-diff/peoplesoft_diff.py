@@ -272,6 +272,7 @@ def stream_employee_pages(
     start_row = 1
     page_num = 0
     total_fetched = 0
+    prev_page_fingerprint: Optional[tuple] = None
 
     while True:
         page_num += 1
@@ -282,6 +283,26 @@ def stream_employee_pages(
                 "PeopleSoft returned an empty page at start_row=%d — end of data", start_row
             )
             break
+
+        # Guard against a pagination loop where the backend ignores StartRow
+        # and repeatedly returns the same first page forever.
+        first_emp = employees[0]
+        last_emp = employees[-1]
+        page_fingerprint = (
+            len(employees),
+            first_emp.get("EMPLID", ""),
+            first_emp.get("EMPL_RCD", ""),
+            last_emp.get("EMPLID", ""),
+            last_emp.get("EMPL_RCD", ""),
+        )
+        if prev_page_fingerprint is not None and page_fingerprint == prev_page_fingerprint:
+            log.error(
+                "Detected repeated page fingerprint at start_row=%d; "
+                "pagination may be stuck (StartRow ignored). Stopping fetch.",
+                start_row,
+            )
+            break
+        prev_page_fingerprint = page_fingerprint
 
         total_fetched += len(employees)
         log.info(
@@ -493,7 +514,10 @@ def _parse_xml_response(xml_text: str) -> List[dict]:
         for child in element:
             field = _strip_table_alias(_local_tag(child.tag))
             record[field] = (child.text or "").strip()
-        if record:
+        # Only treat rows with a real EMPLID as employee data rows.
+        # This avoids false positives from non-data <row> elements that can
+        # otherwise keep pagination from ever appearing empty.
+        if record.get("EMPLID", "").strip():
             employees.append(record)
 
     return employees
