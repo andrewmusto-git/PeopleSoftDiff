@@ -84,17 +84,17 @@ EMPL_STATUS_DESCRIPTIONS: Dict[str, str] = {
     "V": "Terminated Pension Pay Out",
 }
 
-# XML body for the PeopleSoft query request.
-# QueryName, StartRow, and MaxRow are injected at runtime.
-# StartRow is omitted on the first page (start_row=1) to match the original
-# format that was proven to work; it is included on subsequent pages for
-# pagination.  If PeopleSoft returns a 500 on page 2+, the backend does not
-# support StartRow and an alternative pagination strategy is needed.
-_QUERY_BODY_FIRST_PAGE = """\
+# ---------------------------------------------------------------------------
+# XML request body templates
+# ---------------------------------------------------------------------------
+
+# Differential query — no prompts, MaxRow only.  This is the proven format
+# that SailPoint uses for ZPS_SP_DIFFERNTIAL.
+_QUERY_BODY_DIFFERENTIAL = """\
 <?xml version="1.0"?>
 <QAS_EXEQRY_SYNC_REQ_MSG>
    <QAS_EXEQRY_SYNC_REQ>
-    <QueryName>{query_name}</QueryName>
+      <QueryName>{query_name}</QueryName>
       <isConnectedQuery>N</isConnectedQuery>
       <OwnerType>PUBLIC</OwnerType>
       <BlockSizeKB>0</BlockSizeKB>
@@ -106,19 +106,29 @@ _QUERY_BODY_FIRST_PAGE = """\
    </QAS_EXEQRY_SYNC_REQ>
 </QAS_EXEQRY_SYNC_REQ_MSG>"""
 
-_QUERY_BODY_WITH_START_ROW = """\
+# Full-sync query — uses BIND1 (start row) / BIND2 (end row) prompt-based
+# pagination, exactly as confirmed in the SailPoint Peoplesoft_FullAgg source.
+# BIND1 = first row of this page (1-based), BIND2 = last row of this page.
+_QUERY_BODY_FULL_SYNC = """\
 <?xml version="1.0"?>
 <QAS_EXEQRY_SYNC_REQ_MSG>
    <QAS_EXEQRY_SYNC_REQ>
-    <QueryName>{query_name}</QueryName>
+      <QueryName>{query_name}</QueryName>
       <isConnectedQuery>N</isConnectedQuery>
       <OwnerType>PUBLIC</OwnerType>
       <BlockSizeKB>0</BlockSizeKB>
-      <StartRow>{start_row}</StartRow>
-      <MaxRow>{max_rows}</MaxRow>
+      <MaxRow>99999</MaxRow>
       <OutResultType>xmlp</OutResultType>
       <OutResultFormat>NONFILE</OutResultFormat>
       <Prompts>
+      <PROMPT>
+          <UniquePromptName>BIND1</UniquePromptName>
+          <FieldValue>{bind1}</FieldValue>
+      </PROMPT>
+      <PROMPT>
+          <UniquePromptName>BIND2</UniquePromptName>
+          <FieldValue>{bind2}</FieldValue>
+      </PROMPT>
       </Prompts>
    </QAS_EXEQRY_SYNC_REQ>
 </QAS_EXEQRY_SYNC_REQ_MSG>"""
@@ -237,6 +247,30 @@ def _build_session(username: str, password: str) -> requests.Session:
     return session
 
 
+def _build_request_body(
+    query_name: str,
+    start_row: int,
+    page_size: int,
+) -> str:
+    """Build the correct XML request body for the given query and page.
+
+    ZPS_SP_DIFFERNTIAL uses MaxRow-only (no prompts).
+    ZPS_SP_FULL_SYNC (and any future prompt-based queries) uses BIND1/BIND2
+    row-range prompts, as confirmed from the SailPoint Peoplesoft_FullAgg source.
+    """
+    if query_name == QUERY_FULL_SYNC:
+        return _QUERY_BODY_FULL_SYNC.format(
+            query_name=query_name,
+            bind1=start_row,
+            bind2=start_row + page_size - 1,
+        )
+    # Default: differential / no-prompt format
+    return _QUERY_BODY_DIFFERENTIAL.format(
+        query_name=query_name,
+        max_rows=page_size,
+    )
+
+
 def _fetch_employee_page(
     session: requests.Session,
     url: str,
@@ -245,22 +279,8 @@ def _fetch_employee_page(
     page_size: int,
     timeout: int = REQUEST_TIMEOUT_SECONDS,
 ) -> List[dict]:
-    """POST one paginated page of a PeopleSoft query.
-
-    Uses PeopleSoft's <StartRow>/<MaxRow> pagination.  Returns the list of
-    employee attribute dicts for this page; an empty list signals end-of-data.
-    """
-    if start_row <= 1:
-        body = _QUERY_BODY_FIRST_PAGE.format(
-            query_name=query_name,
-            max_rows=page_size,
-        )
-    else:
-        body = _QUERY_BODY_WITH_START_ROW.format(
-            query_name=query_name,
-            start_row=start_row,
-            max_rows=page_size,
-        )
+    """POST one paginated page of a PeopleSoft query."""
+    body = _build_request_body(query_name, start_row, page_size)
     log.debug(
         "Fetching employee page: query=%s start_row=%d max_rows=%d timeout=%ds url=%s",
         query_name, start_row, page_size, timeout, url,
@@ -306,10 +326,17 @@ def _fetch_employee_page(
             print("\n  PeopleSoft response body:", flush=True)
             # Print up to 2000 chars so XML fault messages are fully visible
             print(f"  {response_body[:2000]}", flush=True)
-        print(
-            "\n  Tip: run with --log-level DEBUG to see the exact XML request sent.",
-            flush=True,
-        )
+        else:
+            print(
+                "\n  PeopleSoft returned an empty 500 body.\n"
+                "  Most common causes:\n"
+                "    1. The query name does not exist in PeopleSoft\n"
+                f"       (tried: '{query_name}') — confirm the correct name with your PS admin.\n"
+                "    2. The service account does not have permission to run this query.\n"
+                "    3. The query is private (OwnerType=PRIVATE) — it must be PUBLIC.\n"
+                "  Tip: run with --log-level DEBUG to see the exact XML request body sent.",
+                flush=True,
+            )
         sys.exit(1)
 
     return _parse_xml_response(response.text)
@@ -343,10 +370,18 @@ def stream_employee_pages(
 
     query_name = cfg["peoplesoft_query_name"]
     request_timeout = cfg.get("request_timeout", REQUEST_TIMEOUT_SECONDS)
+
+    # Differential query returns all changed records in a single MaxRow-capped
+    # response — there is no server-side pagination, so we only ever make one
+    # request and stop.  Full-sync uses BIND1/BIND2 row-range prompts, so we
+    # advance start_row by page_size each iteration.
+    is_paginated = (query_name == QUERY_FULL_SYNC)
+
     log.info(
-        "Streaming employees from PeopleSoft: %s  (query=%s page_size=%d timeout=%ds)",
+        "Streaming employees from PeopleSoft: %s  (query=%s paginated=%s page_size=%d timeout=%ds)",
         url,
         query_name,
+        is_paginated,
         page_size,
         request_timeout,
     )
@@ -368,8 +403,7 @@ def stream_employee_pages(
             )
             break
 
-        # Guard against a pagination loop where the backend ignores StartRow
-        # and repeatedly returns the same first page forever.
+        # Guard against infinite loop (repeated identical page)
         first_emp = employees[0]
         last_emp = employees[-1]
         page_fingerprint = (
@@ -381,11 +415,13 @@ def stream_employee_pages(
         )
         if prev_page_fingerprint is not None and page_fingerprint == prev_page_fingerprint:
             log.error(
-                "Detected repeated page fingerprint at start_row=%d; "
-                "pagination may be stuck (StartRow ignored). Stopping fetch. "
-                "Query '%s' may not support paging or may be returning a fixed differential window.",
-                start_row,
-                query_name,
+                "Detected repeated page at start_row=%d for query '%s' — stopping fetch.",
+                start_row, query_name,
+            )
+            print(
+                f"\nERROR: PeopleSoft returned the same page twice at row {start_row}. "
+                "Stopping fetch to avoid an infinite loop.",
+                flush=True,
             )
             break
         prev_page_fingerprint = page_fingerprint
@@ -405,12 +441,13 @@ def stream_employee_pages(
 
         yield employees
 
-        # Advance to the next page.
-        # NOTE: We do NOT stop on a short page.  PeopleSoft may return fewer
-        # rows than page_size on any page (e.g. due to a server-side cap) even
-        # when more records remain.  The only reliable end-of-data signal is an
-        # empty response, which is caught at the top of the loop.
-        start_row += len(employees)
+        # For non-paginated queries (differential) one request returns everything.
+        if not is_paginated:
+            log.info("Non-paginated query — stopping after first page.")
+            break
+
+        # Advance BIND1 to the next page window.
+        start_row += page_size
 
         if page_delay > 0:
             time.sleep(page_delay)
@@ -1020,6 +1057,8 @@ def _prompt_query_selection(current: str) -> str:
     print()
     print(f"  [2]  Full Sync (all employees)  — {QUERY_FULL_SYNC}")
     print(f"       Returns every employee record (~100,000+ rows).")
+    print(f"       NOTE: Confirm this query name exists in PeopleSoft with your PS admin.")
+    print(f"       Override with: --peoplesoft-query-name <YOUR_FULL_QUERY_NAME>")
     print()
 
     while True:
