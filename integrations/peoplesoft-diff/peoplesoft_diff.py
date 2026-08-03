@@ -48,7 +48,11 @@ QUERY_FULL_SYNC    = "ZPS_SP_FULL_SYNC"     # all employees (full population)
 # PeopleSoft REST Adhoc Query endpoint (relative path, appended to base URL)
 QUERY_ENDPOINT = "/PSIGW/RESTListeningConnector/PSFT_HR/ExecuteAdhocQuery.v1/executeadhocquery"
 
-REQUEST_TIMEOUT_SECONDS = 120
+# Default HTTP timeout for a single PeopleSoft API request.
+# Full-sync queries against 100,000+ records can take several minutes for
+# PeopleSoft to prepare the result set before returning the first page.
+# Override with --request-timeout <seconds> or PEOPLESOFT_REQUEST_TIMEOUT env var.
+REQUEST_TIMEOUT_SECONDS = 600
 
 # Number of employee records fetched per PeopleSoft API page.
 # PeopleSoft's ExecuteAdhocQuery endpoint supports <StartRow>/<MaxRow> pagination.
@@ -163,6 +167,11 @@ def load_config(args: argparse.Namespace) -> dict:
             getattr(args, "peoplesoft_query_name", None)
             or os.getenv("PEOPLESOFT_QUERY_NAME", DEFAULT_QUERY_NAME)
         ).strip(),
+        "request_timeout": int(
+            getattr(args, "request_timeout", None)
+            or os.getenv("PEOPLESOFT_REQUEST_TIMEOUT", "")
+            or REQUEST_TIMEOUT_SECONDS
+        ),
         "veza_url": (
             getattr(args, "veza_url", None)
             or os.getenv("VEZA_URL", "")
@@ -216,6 +225,7 @@ def _fetch_employee_page(
     query_name: str,
     start_row: int,
     page_size: int,
+    timeout: int = REQUEST_TIMEOUT_SECONDS,
 ) -> List[dict]:
     """POST one paginated page of a PeopleSoft query.
 
@@ -228,33 +238,46 @@ def _fetch_employee_page(
         max_rows=page_size,
     )
     log.debug(
-        "Fetching employee page: query=%s start_row=%d max_rows=%d url=%s",
-        query_name, start_row, page_size, url,
+        "Fetching employee page: query=%s start_row=%d max_rows=%d timeout=%ds url=%s",
+        query_name, start_row, page_size, timeout, url,
     )
 
     try:
-        response = session.post(url, data=body, timeout=REQUEST_TIMEOUT_SECONDS, verify=True)
+        response = session.post(url, data=body, timeout=timeout, verify=True)
         response.raise_for_status()
     except requests.exceptions.SSLError as exc:
-        log.error("SSL verification failed for %s: %s", url, exc)
-        log.error(
+        msg = (
+            f"SSL verification failed for {url}: {exc}\n"
             "If using a self-signed or internal CA certificate, set the "
             "REQUESTS_CA_BUNDLE environment variable to your CA bundle path."
         )
+        log.error(msg)
+        print(f"\nERROR: {msg}", flush=True)
         sys.exit(1)
     except requests.exceptions.ConnectionError as exc:
-        log.error("Connection failed for %s: %s", url, exc)
+        msg = f"Connection failed for {url}: {exc}"
+        log.error(msg)
+        print(f"\nERROR: {msg}", flush=True)
         sys.exit(1)
     except requests.exceptions.Timeout:
-        log.error(
-            "Request timed out after %d seconds — consider increasing REQUEST_TIMEOUT_SECONDS "
-            "or reducing --page-size",
-            REQUEST_TIMEOUT_SECONDS,
+        msg = (
+            f"Request timed out after {timeout}s waiting for PeopleSoft to respond.\n"
+            f"  Query    : {query_name}\n"
+            f"  Start row: {start_row}\n"
+            f"Try increasing the timeout with --request-timeout (current: {timeout}s) "
+            f"or reducing --page-size (current: {page_size})."
         )
+        log.error(msg)
+        print(f"\nERROR: {msg}", flush=True)
         sys.exit(1)
     except requests.exceptions.HTTPError as exc:
-        log.error("HTTP error from PeopleSoft: %s", exc)
-        log.debug("Response body: %s", exc.response.text[:1000] if exc.response else "")
+        body_snippet = exc.response.text[:500] if exc.response else ""
+        msg = f"HTTP error from PeopleSoft: {exc}"
+        log.error(msg)
+        log.debug("Response body: %s", body_snippet)
+        print(f"\nERROR: {msg}", flush=True)
+        if body_snippet:
+            print(f"  Response snippet: {body_snippet[:200]}", flush=True)
         sys.exit(1)
 
     return _parse_xml_response(response.text)
@@ -287,11 +310,13 @@ def stream_employee_pages(
     session = _build_session(cfg["peoplesoft_username"], cfg["peoplesoft_password"])
 
     query_name = cfg["peoplesoft_query_name"]
+    request_timeout = cfg.get("request_timeout", REQUEST_TIMEOUT_SECONDS)
     log.info(
-        "Streaming employees from PeopleSoft: %s  (query=%s page_size=%d)",
+        "Streaming employees from PeopleSoft: %s  (query=%s page_size=%d timeout=%ds)",
         url,
         query_name,
         page_size,
+        request_timeout,
     )
 
     start_row = 1
@@ -301,7 +326,9 @@ def stream_employee_pages(
 
     while True:
         page_num += 1
-        employees = _fetch_employee_page(session, url, query_name, start_row, page_size)
+        employees = _fetch_employee_page(
+            session, url, query_name, start_row, page_size, timeout=request_timeout
+        )
 
         if not employees:
             log.info(
@@ -886,6 +913,18 @@ def _parse_args() -> argparse.Namespace:
                      choices=["DEBUG", "INFO", "WARNING", "ERROR"],
                      help="Logging verbosity")
     run.add_argument(
+        "--request-timeout",
+        type=int,
+        default=None,
+        metavar="SECONDS",
+        help=(
+            f"HTTP timeout in seconds for each PeopleSoft API request "
+            f"(default: {REQUEST_TIMEOUT_SECONDS}s). "
+            f"Full-sync queries may need 300–900s. "
+            f"Also read from PEOPLESOFT_REQUEST_TIMEOUT env var."
+        ),
+    )
+    run.add_argument(
         "--page-size",
         type=int,
         default=DEFAULT_PAGE_SIZE,
@@ -991,6 +1030,8 @@ def main() -> None:
     print(f"  Query      : {args.peoplesoft_query_name}")
     print(f"  Page size  : {args.page_size} records/page")
     print(f"  Page delay : {args.page_delay}s")
+    _timeout_val = args.request_timeout or int(os.getenv("PEOPLESOFT_REQUEST_TIMEOUT", "") or REQUEST_TIMEOUT_SECONDS)
+    print(f"  API timeout: {_timeout_val}s per page")
     print(f"  Staging    : {staging_path}")
     print(f"  Skip fetch : {args.skip_fetch}")
     print(f"  Dry-run    : {args.dry_run}")
@@ -998,6 +1039,9 @@ def main() -> None:
     print("=" * 60)
 
     cfg = load_config(args)
+    _log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+    print(f"  Log dir    : {_log_dir}  (tail -f {_log_dir}/peoplesoft_diff_*.log)")
+    print()
 
     # ------------------------------------------------------------------
     # Phase 1 — Fetch ALL PeopleSoft records to the JSONL staging file
