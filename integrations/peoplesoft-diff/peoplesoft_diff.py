@@ -41,6 +41,7 @@ log = logging.getLogger(__name__)
 
 DEFAULT_PROVIDER_NAME = "PeopleSoft HR"
 DEFAULT_DATASOURCE_NAME = "PeopleSoft Differential"
+DEFAULT_QUERY_NAME = "ZPS_SP_DIFFERNTIAL"
 
 # PeopleSoft REST Adhoc Query endpoint (relative path, appended to base URL)
 QUERY_ENDPOINT = "/PSIGW/RESTListeningConnector/PSFT_HR/ExecuteAdhocQuery.v1/executeadhocquery"
@@ -77,15 +78,15 @@ EMPL_STATUS_DESCRIPTIONS: Dict[str, str] = {
     "V": "Terminated Pension Pay Out",
 }
 
-# XML body for the PeopleSoft differential aggregation query.
+# XML body for the PeopleSoft query request.
 # StartRow (1-based) and MaxRow are injected at runtime to support pagination.
-# The Prompts section is intentionally empty so PeopleSoft returns all records
-# in the differential dataset for each page.
+# QueryName is injected at runtime so operators can switch between
+# differential and full-population queries without code changes.
 _DIFFERENTIAL_QUERY_BODY = """\
 <?xml version="1.0"?>
 <QAS_EXEQRY_SYNC_REQ_MSG>
    <QAS_EXEQRY_SYNC_REQ>
-      <QueryName>ZPS_SP_DIFFERNTIAL</QueryName>
+    <QueryName>{query_name}</QueryName>
       <isConnectedQuery>N</isConnectedQuery>
       <OwnerType>PUBLIC</OwnerType>
       <BlockSizeKB>0</BlockSizeKB>
@@ -156,6 +157,10 @@ def load_config(args: argparse.Namespace) -> dict:
             getattr(args, "peoplesoft_password", None)
             or os.getenv("PEOPLESOFT_PASSWORD", "")
         ),
+        "peoplesoft_query_name": (
+            getattr(args, "peoplesoft_query_name", None)
+            or os.getenv("PEOPLESOFT_QUERY_NAME", DEFAULT_QUERY_NAME)
+        ).strip(),
         "veza_url": (
             getattr(args, "veza_url", None)
             or os.getenv("VEZA_URL", "")
@@ -173,6 +178,10 @@ def load_config(args: argparse.Namespace) -> dict:
         errors.append("PEOPLESOFT_USERNAME is required (--peoplesoft-username or env)")
     if not cfg["peoplesoft_password"]:
         errors.append("PEOPLESOFT_PASSWORD is required (--peoplesoft-password or env)")
+    if not cfg["peoplesoft_query_name"]:
+        errors.append(
+            "PEOPLESOFT_QUERY_NAME is required (--peoplesoft-query-name or env)"
+        )
     if not args.dry_run:
         if not cfg["veza_url"]:
             errors.append("VEZA_URL is required (--veza-url or env)")
@@ -199,16 +208,26 @@ def _build_session(username: str, password: str) -> requests.Session:
     return session
 
 
-def _fetch_employee_page(session: requests.Session, url: str, start_row: int, page_size: int) -> List[dict]:
-    """POST one paginated page of the differential aggregation query to PeopleSoft.
+def _fetch_employee_page(
+    session: requests.Session,
+    url: str,
+    query_name: str,
+    start_row: int,
+    page_size: int,
+) -> List[dict]:
+    """POST one paginated page of a PeopleSoft query.
 
     Uses PeopleSoft's <StartRow>/<MaxRow> pagination.  Returns the list of
     employee attribute dicts for this page; an empty list signals end-of-data.
     """
-    body = _DIFFERENTIAL_QUERY_BODY.format(start_row=start_row, max_rows=page_size)
+    body = _DIFFERENTIAL_QUERY_BODY.format(
+        query_name=query_name,
+        start_row=start_row,
+        max_rows=page_size,
+    )
     log.debug(
-        "Fetching employee page: start_row=%d max_rows=%d url=%s",
-        start_row, page_size, url,
+        "Fetching employee page: query=%s start_row=%d max_rows=%d url=%s",
+        query_name, start_row, page_size, url,
     )
 
     try:
@@ -265,8 +284,12 @@ def stream_employee_pages(
     url = f"{base_url}{QUERY_ENDPOINT}"
     session = _build_session(cfg["peoplesoft_username"], cfg["peoplesoft_password"])
 
+    query_name = cfg["peoplesoft_query_name"]
     log.info(
-        "Streaming employees from PeopleSoft: %s  (page_size=%d)", url, page_size
+        "Streaming employees from PeopleSoft: %s  (query=%s page_size=%d)",
+        url,
+        query_name,
+        page_size,
     )
 
     start_row = 1
@@ -276,7 +299,7 @@ def stream_employee_pages(
 
     while True:
         page_num += 1
-        employees = _fetch_employee_page(session, url, start_row, page_size)
+        employees = _fetch_employee_page(session, url, query_name, start_row, page_size)
 
         if not employees:
             log.info(
@@ -298,8 +321,10 @@ def stream_employee_pages(
         if prev_page_fingerprint is not None and page_fingerprint == prev_page_fingerprint:
             log.error(
                 "Detected repeated page fingerprint at start_row=%d; "
-                "pagination may be stuck (StartRow ignored). Stopping fetch.",
+                "pagination may be stuck (StartRow ignored). Stopping fetch. "
+                "Query '%s' may not support paging or may be returning a fixed differential window.",
                 start_row,
+                query_name,
             )
             break
         prev_page_fingerprint = page_fingerprint
@@ -812,6 +837,14 @@ def _parse_args() -> argparse.Namespace:
         "--peoplesoft-password", metavar="PASS",
         help="PeopleSoft service account password  (env: PEOPLESOFT_PASSWORD)",
     )
+    src.add_argument(
+        "--peoplesoft-query-name", metavar="QUERY",
+        default=DEFAULT_QUERY_NAME,
+        help=(
+            "PeopleSoft public query name to execute (env: PEOPLESOFT_QUERY_NAME). "
+            f"Default: {DEFAULT_QUERY_NAME}."
+        ),
+    )
 
     veza = parser.add_argument_group("Veza target")
     veza.add_argument(
@@ -898,6 +931,7 @@ def main() -> None:
     print("  PeopleSoft Diff -> Veza OAA Integration")
     print(f"  Provider   : {args.provider_name}")
     print(f"  Datasource : {args.datasource_name}")
+    print(f"  Query      : {args.peoplesoft_query_name}")
     print(f"  Page size  : {args.page_size} records/page")
     print(f"  Page delay : {args.page_delay}s")
     print(f"  Staging    : {staging_path}")

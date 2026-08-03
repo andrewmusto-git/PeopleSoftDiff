@@ -301,6 +301,8 @@ else
 PEOPLESOFT_BASE_URL=${PS_BASE_URL}
 PEOPLESOFT_USERNAME=${PS_USERNAME}
 PEOPLESOFT_PASSWORD=${PS_PASSWORD}
+# Query name can be switched to a full-population query if needed
+PEOPLESOFT_QUERY_NAME=ZPS_SP_DIFFERNTIAL
 
 # Veza target
 VEZA_URL=${VZ_URL}
