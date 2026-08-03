@@ -429,6 +429,7 @@ def fetch_to_staging(
 def stream_staging_pages(
     staging_path: str,
     batch_size: int = DEFAULT_PAGE_SIZE,
+    total_records: int = 0,
 ) -> Generator[List[dict], None, None]:
     """Read the JSONL staging file and yield batches of employee-record dicts.
 
@@ -436,10 +437,17 @@ def stream_staging_pages(
     once, regardless of how large the staging file grows.  The yielded batches
     are the same shape as the pages yielded by *stream_employee_pages*, so the
     existing *build_oaa_payload* function consumes them unchanged.
+
+    *total_records* is used purely for progress display — if 0, percentages
+    are omitted from the output.
     """
+    import math
     log.info(
-        "Phase 2 — Streaming staging file: %s  (batch_size=%d)", staging_path, batch_size
+        "Phase 2 — Streaming staging file: %s  (batch_size=%d total=%d)",
+        staging_path, batch_size, total_records,
     )
+
+    total_batches = math.ceil(total_records / batch_size) if total_records > 0 else 0
 
     total_read = 0
     batch: List[dict] = []
@@ -462,10 +470,12 @@ def stream_staging_pages(
             if len(batch) >= batch_size:
                 batch_num += 1
                 ts = datetime.now().strftime("%H:%M:%S")
+                batch_label = f"Batch {batch_num}/{total_batches}" if total_batches else f"Batch {batch_num}"
+                pct = f" ({total_read / total_records * 100:.1f}%)" if total_records else ""
                 print(
-                    f"  [{ts}] Staging batch {batch_num}: "
-                    f"processing {len(batch):,} records "
-                    f"(total read so far: {total_read:,})",
+                    f"  [{ts}] {batch_label}: "
+                    f"{len(batch):,} records | "
+                    f"Running total: {total_read:,}{pct}",
                     flush=True,
                 )
                 log.debug(
@@ -480,10 +490,12 @@ def stream_staging_pages(
     if batch:
         batch_num += 1
         ts = datetime.now().strftime("%H:%M:%S")
+        batch_label = f"Batch {batch_num}/{total_batches}" if total_batches else f"Batch {batch_num}"
+        pct = f" ({total_read / total_records * 100:.1f}%)"
         print(
-            f"  [{ts}] Staging batch {batch_num} (final): "
-            f"processing {len(batch):,} records "
-            f"(total: {total_read:,})",
+            f"  [{ts}] {batch_label} (final): "
+            f"{len(batch):,} records | "
+            f"Running total: {total_read:,}{pct if total_records else ''}",
             flush=True,
         )
         log.debug("Staging batch %d (final): %d records", batch_num, len(batch))
@@ -943,8 +955,10 @@ def main() -> None:
     cfg = load_config(args)
 
     # ------------------------------------------------------------------
-    # Phase 1 — Fetch all PeopleSoft records to the JSONL staging file
+    # Phase 1 — Fetch ALL PeopleSoft records to the JSONL staging file
     # ------------------------------------------------------------------
+    total_records = 0
+
     if args.skip_fetch:
         if not os.path.exists(staging_path):
             log.error(
@@ -955,32 +969,58 @@ def main() -> None:
                 "Run without --skip-fetch to fetch fresh data first."
             )
             sys.exit(1)
+        # Count lines to get total so Phase 2 can show accurate progress
+        with open(staging_path, "r", encoding="utf-8") as _fh:
+            total_records = sum(1 for ln in _fh if ln.strip())
         staging_size = os.path.getsize(staging_path)
         log.info(
-            "--skip-fetch: reusing existing staging file: %s (%d bytes)",
-            staging_path, staging_size,
+            "--skip-fetch: reusing existing staging file: %s (%d bytes, %d records)",
+            staging_path, staging_size, total_records,
         )
         print(
-            f"\nPhase 1  —  Skipped (--skip-fetch)\n"
-            f"  Reusing staging file : {staging_path}\n"
-            f"  File size            : {staging_size:,} bytes\n"
+            f"\n{'=' * 60}\n"
+            f"  Phase 1 — Skipped (--skip-fetch)\n"
+            f"  Staging file : {staging_path}\n"
+            f"  File size    : {staging_size:,} bytes\n"
+            f"  Total records: {total_records:,}\n"
+            f"{'=' * 60}"
         )
     else:
         if args.page_delay > 0:
             log.info("Page delay enabled: %.1f seconds between PeopleSoft pages", args.page_delay)
-        fetch_to_staging(
+        total_records = fetch_to_staging(
             cfg,
             staging_path=staging_path,
             page_size=args.page_size,
             page_delay=args.page_delay,
         )
 
-    # ------------------------------------------------------------------
-    # Phase 2 — Build OAA payload from staging file, then push to Veza
-    # ------------------------------------------------------------------
-    print(f"\nPhase 2  —  Build OAA payload from staging file")
+    if total_records == 0:
+        log.warning("Phase 1 produced no records — nothing to build or push")
+        print("WARNING: No records were fetched from PeopleSoft. Check credentials and query name.")
+        sys.exit(0)
 
-    employee_pages = stream_staging_pages(staging_path, batch_size=args.page_size)
+    # ------------------------------------------------------------------
+    # Phase 2 — Build OAA payload from ALL staged records, then push
+    # ------------------------------------------------------------------
+    import math
+    total_batches = math.ceil(total_records / args.page_size)
+    print(
+        f"\n{'=' * 60}\n"
+        f"  Phase 2 — Build & Push OAA Payload\n"
+        f"  Total records  : {total_records:,}\n"
+        f"  Batch size     : {args.page_size:,} records/batch\n"
+        f"  Total batches  : {total_batches:,}\n"
+        f"{'=' * 60}\n"
+    )
+    log.info(
+        "Phase 2 — building OAA payload: %d records across %d batch(es)",
+        total_records, total_batches,
+    )
+
+    employee_pages = stream_staging_pages(
+        staging_path, batch_size=args.page_size, total_records=total_records
+    )
     app = build_oaa_payload(employee_pages, args)
 
     # Sanity check: if the app has no users the stream returned nothing
