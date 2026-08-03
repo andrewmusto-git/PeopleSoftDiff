@@ -85,10 +85,28 @@ EMPL_STATUS_DESCRIPTIONS: Dict[str, str] = {
 }
 
 # XML body for the PeopleSoft query request.
-# StartRow (1-based) and MaxRow are injected at runtime to support pagination.
-# QueryName is injected at runtime so operators can switch between
-# differential and full-population queries without code changes.
-_DIFFERENTIAL_QUERY_BODY = """\
+# QueryName, StartRow, and MaxRow are injected at runtime.
+# StartRow is omitted on the first page (start_row=1) to match the original
+# format that was proven to work; it is included on subsequent pages for
+# pagination.  If PeopleSoft returns a 500 on page 2+, the backend does not
+# support StartRow and an alternative pagination strategy is needed.
+_QUERY_BODY_FIRST_PAGE = """\
+<?xml version="1.0"?>
+<QAS_EXEQRY_SYNC_REQ_MSG>
+   <QAS_EXEQRY_SYNC_REQ>
+    <QueryName>{query_name}</QueryName>
+      <isConnectedQuery>N</isConnectedQuery>
+      <OwnerType>PUBLIC</OwnerType>
+      <BlockSizeKB>0</BlockSizeKB>
+      <MaxRow>{max_rows}</MaxRow>
+      <OutResultType>xmlp</OutResultType>
+      <OutResultFormat>NONFILE</OutResultFormat>
+      <Prompts>
+      </Prompts>
+   </QAS_EXEQRY_SYNC_REQ>
+</QAS_EXEQRY_SYNC_REQ_MSG>"""
+
+_QUERY_BODY_WITH_START_ROW = """\
 <?xml version="1.0"?>
 <QAS_EXEQRY_SYNC_REQ_MSG>
    <QAS_EXEQRY_SYNC_REQ>
@@ -232,15 +250,22 @@ def _fetch_employee_page(
     Uses PeopleSoft's <StartRow>/<MaxRow> pagination.  Returns the list of
     employee attribute dicts for this page; an empty list signals end-of-data.
     """
-    body = _DIFFERENTIAL_QUERY_BODY.format(
-        query_name=query_name,
-        start_row=start_row,
-        max_rows=page_size,
-    )
+    if start_row <= 1:
+        body = _QUERY_BODY_FIRST_PAGE.format(
+            query_name=query_name,
+            max_rows=page_size,
+        )
+    else:
+        body = _QUERY_BODY_WITH_START_ROW.format(
+            query_name=query_name,
+            start_row=start_row,
+            max_rows=page_size,
+        )
     log.debug(
         "Fetching employee page: query=%s start_row=%d max_rows=%d timeout=%ds url=%s",
         query_name, start_row, page_size, timeout, url,
     )
+    log.debug("Request XML body:\n%s", body)
 
     try:
         response = session.post(url, data=body, timeout=timeout, verify=True)
@@ -271,13 +296,20 @@ def _fetch_employee_page(
         print(f"\nERROR: {msg}", flush=True)
         sys.exit(1)
     except requests.exceptions.HTTPError as exc:
-        body_snippet = exc.response.text[:500] if exc.response else ""
+        response_body = exc.response.text if exc.response else ""
         msg = f"HTTP error from PeopleSoft: {exc}"
-        log.error(msg)
-        log.debug("Response body: %s", body_snippet)
+        log.error("%s\nResponse body:\n%s", msg, response_body)
         print(f"\nERROR: {msg}", flush=True)
-        if body_snippet:
-            print(f"  Response snippet: {body_snippet[:200]}", flush=True)
+        print(f"  Query    : {query_name}", flush=True)
+        print(f"  Start row: {start_row}", flush=True)
+        if response_body:
+            print("\n  PeopleSoft response body:", flush=True)
+            # Print up to 2000 chars so XML fault messages are fully visible
+            print(f"  {response_body[:2000]}", flush=True)
+        print(
+            "\n  Tip: run with --log-level DEBUG to see the exact XML request sent.",
+            flush=True,
+        )
         sys.exit(1)
 
     return _parse_xml_response(response.text)
