@@ -730,7 +730,9 @@ def build_oaa_payload(
     active_count   = 0
     inactive_count = 0
     skipped_count  = 0
+    duplicate_count = 0
     page_num       = 0
+    seen_emplids: set[str] = set()
 
     for page in employee_pages:
         page_num += 1
@@ -741,6 +743,14 @@ def build_oaa_payload(
                 log.warning("Skipping record with empty EMPLID (ROWKEY=%s)", emp.get("ROWKEY", "?"))
                 skipped_count += 1
                 continue
+
+            # Full aggregation can contain multiple rows per EMPLID (e.g. multiple
+            # EMPL_RCD/job rows). OAA local user unique_id must be unique, so we
+            # keep the first row per EMPLID and skip subsequent duplicates.
+            if emplid in seen_emplids:
+                duplicate_count += 1
+                continue
+            seen_emplids.add(emplid)
 
             # --- Lazily register department group ---
             deptid = emp.get("DEPTID", "").strip()
@@ -838,7 +848,8 @@ def build_oaa_payload(
             f"{total_users:,} users added to payload "
             f"({active_count:,} active, {inactive_count:,} inactive) | "
             f"{len(registered_groups):,} departments | "
-            f"{skipped_count:,} skipped",
+            f"{skipped_count:,} skipped | "
+            f"{duplicate_count:,} duplicate rows skipped",
             flush=True,
         )
 
@@ -847,13 +858,16 @@ def build_oaa_payload(
     print(
         f"  [{ts}] Payload build complete: "
         f"{total_users:,} users | {active_count:,} active | {inactive_count:,} inactive | "
-        f"{len(registered_groups):,} departments | {skipped_count:,} skipped",
+        f"{len(registered_groups):,} departments | {skipped_count:,} skipped | "
+        f"{duplicate_count:,} duplicate rows skipped",
         flush=True,
     )
     log.info(
         "Payload summary: %d active users, %d inactive users, "
-        "%d skipped (empty EMPLID), %d departments (across %d pages)",
-        active_count, inactive_count, skipped_count, len(registered_groups), page_num,
+        "%d skipped (empty EMPLID), %d duplicate rows skipped, "
+        "%d departments (across %d pages)",
+        active_count, inactive_count, skipped_count, duplicate_count,
+        len(registered_groups), page_num,
     )
     return app
 
