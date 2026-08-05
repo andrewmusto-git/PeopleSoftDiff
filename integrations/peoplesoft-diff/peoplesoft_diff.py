@@ -688,6 +688,9 @@ def build_oaa_payload(
     EMPL_STATUS in ACTIVE_SET    -> LocalUser.is_active = True
     DEPTID                       -> LocalGroup.unique_id (department)
     DESCR                        -> LocalGroup.name  (department display name)
+    DESCR1                       -> location_descr property
+    DESCR2                       -> job_code_descr property
+    DESCR3                       -> city/location description (stored, not used for grouping)
 
     Source of Authority notes
     ~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -713,11 +716,33 @@ def build_oaa_payload(
         "empl_status_desc", "empl_type",          "per_org",
         "hire_date",        "last_date_worked",   "department_id",
         "department_name",  "company",            "company_name",
-        "business_unit",    "location",           "position_nbr",
-        "job_code",         "manager_id",         "lan_id",
-        "legacy_lan_id",    "cmi_id",             "reg_region",
-        "segment",          "org_group",          "function_code",
-        "req_it_access",    "legal_hold",         "acquisition",
+        "business_unit",    "business_unit2",     "business_descr",
+        "location",         "location_descr",     "location_city_descr",
+        "position_nbr",
+        "job_code",         "job_code_descr",     "job_indicator",
+        "manager_id",       "sfhr_mgr",           "lan_id",
+        "legacy_lan_id",    "leg_email",          "cmi_id",
+        "reg_region",       "segment",            "org_group",
+        "function_code",    "div_deptid",         "req_it_access",
+        "legal_hold",       "acquisition",        "white_jobcd",
+        "action",           "action_dt",          "action_reason",
+        "effdt",            "effseq",
+        "address1",         "address2",           "address3",         "address4",
+        "city",             "state",              "postal",
+        "country",          "country_code",       "house_type",
+        "phone",            "phone1",             "phone2",
+        "first_name",       "last_name",          "pref_first_name",  "pref_last_name",
+        "second_last_name", "name_initials",      "name_suffix",      "name_royal_prefix",
+        "lang_cd",          "gl_expense",         "setid_dept",
+        "setid_jobcode",    "setid_location",
+        "nee_provider_id",  "nee_prov_descr",
+        "num1",             "num2",
+        "mgr_l1_lan_id",    "mgr_l2_lan_id",      "mgr_l3_lan_id",    "mgr_l4_lan_id",
+        "mgr_l5_lan_id",    "mgr_l6_lan_id",      "mgr_l7_lan_id",    "mgr_l8_lan_id",
+        "mgr_l9_lan_id",    "mgr_l10_lan_id",
+        "mim_cust_dt1",     "mim_cust_dt2",       "mim_cust_dt3",     "mim_cust_dt4",
+        "mim_cust_nbr1",    "mim_cust_nbr2",      "mim_cust_nbr3",    "mim_cust_nbr4",
+        "mim_cust_str1",    "mim_cust_str2",      "mim_cust_str3",    "mim_cust_str4",
     ):
         app.property_definitions.define_local_user_property(prop_name, OAAPropertyType.STRING)
     log.debug("Registered custom user properties")
@@ -825,20 +850,87 @@ def build_oaa_payload(
             user.set_property("company",           emp.get("COMPANY",            ""))
             user.set_property("company_name",      emp.get("DESCR30",            ""))
             user.set_property("business_unit",     emp.get("BUSINESS_UNIT",      ""))
+            user.set_property("business_unit2",    emp.get("BUSINESS_UNIT2",     ""))
+            user.set_property("business_descr",    emp.get("BUSINESS_DESCR",     ""))
             user.set_property("location",          emp.get("LOCATION",           ""))
+            user.set_property("location_descr",    emp.get("DESCR1",             ""))
+            user.set_property("location_city_descr", emp.get("DESCR3",            ""))
             user.set_property("position_nbr",      emp.get("POSITION_NBR",       ""))
             user.set_property("job_code",          emp.get("JOBCODE",            ""))
+            user.set_property("job_code_descr",    emp.get("DESCR2",             ""))
+            user.set_property("job_indicator",     emp.get("JOB_INDICATOR",      ""))
             user.set_property("manager_id",        emp.get("MANAGER_ID",         ""))
+            user.set_property("sfhr_mgr",          emp.get("ZPS_SFHR_MGR",       ""))
             user.set_property("lan_id",            emp.get("ZPS_LAN_ID",         ""))
             user.set_property("legacy_lan_id",     emp.get("ZPS_LEG_LANID",      ""))
+            user.set_property("leg_email",         emp.get("ZPS_LEG_EMAIL",      ""))
             user.set_property("cmi_id",            emp.get("ZPS_CMI_ID",         ""))
             user.set_property("reg_region",        emp.get("REG_REGION",         ""))
             user.set_property("segment",           emp.get("ZPS_SEGMENT",        ""))
             user.set_property("org_group",         emp.get("ZPS_GROUP",          ""))
             user.set_property("function_code",     emp.get("ZPS_FUNCTION",       ""))
+            user.set_property("div_deptid",        emp.get("ZPS_DIV_DEPTID",     ""))
             user.set_property("req_it_access",     emp.get("ZPS_REQ_IT_ACCESS",  ""))
             user.set_property("legal_hold",        emp.get("ZPS_LEGAL_HOLD",     ""))
             user.set_property("acquisition",       emp.get("ZPS_ACQUISITION",    ""))
+            user.set_property("white_jobcd",       emp.get("ZPS_WHITE_JOBCD",    ""))
+            user.set_property("action",            emp.get("ACTION",             ""))
+            user.set_property("action_dt",         emp.get("ACTION_DT",          ""))
+            user.set_property("action_reason",     emp.get("ACTION_REASON",      ""))
+            user.set_property("effdt",             emp.get("EFFDT",              ""))
+            user.set_property("effseq",            emp.get("EFFSEQ",             ""))
+            user.set_property("address1",          emp.get("ADDRESS1",           ""))
+            user.set_property("address2",          emp.get("ADDRESS2",           ""))
+            user.set_property("address3",          emp.get("ADDRESS3",           ""))
+            user.set_property("address4",          emp.get("ADDRESS4",           ""))
+            user.set_property("city",              emp.get("CITY",               ""))
+            user.set_property("state",             emp.get("STATE",              ""))
+            user.set_property("postal",            emp.get("POSTAL",             ""))
+            user.set_property("country",           emp.get("COUNTRY",            ""))
+            user.set_property("country_code",      emp.get("COUNTRY_CODE",       ""))
+            user.set_property("house_type",        emp.get("HOUSE_TYPE",         ""))
+            user.set_property("phone",             emp.get("PHONE",              ""))
+            user.set_property("phone1",            emp.get("PHONE1",             ""))
+            user.set_property("phone2",            emp.get("PHONE2",             ""))
+            user.set_property("first_name",        emp.get("FIRST_NAME",         ""))
+            user.set_property("last_name",         emp.get("LAST_NAME",          ""))
+            user.set_property("pref_first_name",   emp.get("PREF_FIRST_NAME",    ""))
+            user.set_property("pref_last_name",    emp.get("ZPS_PREF_LAST_NAME", ""))
+            user.set_property("second_last_name",  emp.get("SECOND_LAST_NAME",   ""))
+            user.set_property("name_initials",     emp.get("NAME_INITIALS",      ""))
+            user.set_property("name_suffix",       emp.get("NAME_SUFFIX",        ""))
+            user.set_property("name_royal_prefix", emp.get("NAME_ROYAL_PREFIX",  ""))
+            user.set_property("lang_cd",           emp.get("LANG_CD",            ""))
+            user.set_property("gl_expense",        emp.get("GL_EXPENSE",         ""))
+            user.set_property("setid_dept",        emp.get("SETID_DEPT",         ""))
+            user.set_property("setid_jobcode",     emp.get("SETID_JOBCODE",      ""))
+            user.set_property("setid_location",    emp.get("SETID_LOCATION",     ""))
+            user.set_property("nee_provider_id",   emp.get("NEE_PROVIDER_ID",    ""))
+            user.set_property("nee_prov_descr",    emp.get("ZPS_NEE_PROV_DESCR", ""))
+            user.set_property("num1",              emp.get("NUM1",               ""))
+            user.set_property("num2",              emp.get("NUM2",               ""))
+            user.set_property("mgr_l1_lan_id",     emp.get("ZPS_MGR_L1_LAN_ID",  ""))
+            user.set_property("mgr_l2_lan_id",     emp.get("ZPS_MGR_L2_LAN_ID",  ""))
+            user.set_property("mgr_l3_lan_id",     emp.get("ZPS_MGR_L3_LAN_ID",  ""))
+            user.set_property("mgr_l4_lan_id",     emp.get("ZPS_MGR_L4_LAN_ID",  ""))
+            user.set_property("mgr_l5_lan_id",     emp.get("ZPS_MGR_L5_LAN_ID",  ""))
+            user.set_property("mgr_l6_lan_id",     emp.get("ZPS_MGR_L6_LAN_ID",  ""))
+            user.set_property("mgr_l7_lan_id",     emp.get("ZPS_MGR_L7_LAN_ID",  ""))
+            user.set_property("mgr_l8_lan_id",     emp.get("ZPS_MGR_L8_LAN_ID",  ""))
+            user.set_property("mgr_l9_lan_id",     emp.get("ZPS_MGR_L9_LAN_ID",  ""))
+            user.set_property("mgr_l10_lan_id",    emp.get("ZPS_MGR_L10_LAN_ID", ""))
+            user.set_property("mim_cust_dt1",      emp.get("ZPS_MIM_CUST_DT1",   ""))
+            user.set_property("mim_cust_dt2",      emp.get("ZPS_MIM_CUST_DT2",   ""))
+            user.set_property("mim_cust_dt3",      emp.get("ZPS_MIM_CUST_DT3",   ""))
+            user.set_property("mim_cust_dt4",      emp.get("ZPS_MIM_CUST_DT4",   ""))
+            user.set_property("mim_cust_nbr1",     emp.get("ZPS_MIM_CUST_NBR1",  ""))
+            user.set_property("mim_cust_nbr2",     emp.get("ZPS_MIM_CUST_NBR2",  ""))
+            user.set_property("mim_cust_nbr3",     emp.get("ZPS_MIM_CUST_NBR3",  ""))
+            user.set_property("mim_cust_nbr4",     emp.get("ZPS_MIM_CUST_NBR4",  ""))
+            user.set_property("mim_cust_str1",     emp.get("ZPS_MIM_CUST_STR1",  ""))
+            user.set_property("mim_cust_str2",     emp.get("ZPS_MIM_CUST_STR2",  ""))
+            user.set_property("mim_cust_str3",     emp.get("ZPS_MIM_CUST_STR3",  ""))
+            user.set_property("mim_cust_str4",     emp.get("ZPS_MIM_CUST_STR4",  ""))
 
         # Release raw page data before fetching the next page
         del page
