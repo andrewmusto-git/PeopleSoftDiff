@@ -1192,6 +1192,15 @@ def _parse_args() -> argparse.Namespace:
             "to be retried without hitting PeopleSoft again."
         ),
     )
+    run.add_argument(
+        "--force-full-sync-once",
+        action="store_true",
+        help=(
+            "Force this run to use the full-sync query "
+            f"({QUERY_FULL_SYNC}) for a one-time baseline load. "
+            "This does not persist and subsequent runs will follow normal query settings."
+        ),
+    )
 
     return parser.parse_args()
 
@@ -1239,17 +1248,48 @@ def main() -> None:
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
     staging_path = args.staging_file or os.path.join(script_dir, STAGING_FILE_DEFAULT)
+    query_mode_note = "Configured"
+
+    # ---- One-time full sync override ----------------------------------
+    # This override is intentionally runtime-only. It does not write to .env
+    # and does not change defaults for subsequent runs.
+    if args.force_full_sync_once:
+        if args.skip_fetch:
+            msg = "--force-full-sync-once is ignored when --skip-fetch is set"
+            log.warning(msg)
+            print(f"WARNING: {msg}")
+        else:
+            args.peoplesoft_query_name = QUERY_FULL_SYNC
+            query_mode_note = "One-time forced full sync"
+            log.info(
+                "One-time full sync enabled via --force-full-sync-once (query=%s)",
+                QUERY_FULL_SYNC,
+            )
+    # -------------------------------------------------------------------
 
     # ---- Interactive query selection ----------------------------------
     # Only prompt when the query was not explicitly supplied via CLI or env.
     # This keeps cron / non-interactive runs fully automatic.
     env_query = os.getenv("PEOPLESOFT_QUERY_NAME", "").strip()
     cli_query = args.peoplesoft_query_name
-    if not env_query and cli_query == DEFAULT_QUERY_NAME and not args.skip_fetch:
+    if (
+        not args.force_full_sync_once
+        and not env_query
+        and cli_query == DEFAULT_QUERY_NAME
+        and not args.skip_fetch
+    ):
         print("=" * 60)
         print("  PeopleSoft Diff -> Veza OAA Integration")
         print("=" * 60)
         args.peoplesoft_query_name = _prompt_query_selection(cli_query)
+        query_mode_note = "Interactive selection"
+    elif query_mode_note == "Configured":
+        if env_query:
+            query_mode_note = "Configured (env/CLI)"
+        elif cli_query != DEFAULT_QUERY_NAME:
+            query_mode_note = "Configured (CLI override)"
+        else:
+            query_mode_note = "Default"
     # -------------------------------------------------------------------
 
     print("=" * 60)
@@ -1257,6 +1297,7 @@ def main() -> None:
     print(f"  Provider   : {args.provider_name}")
     print(f"  Datasource : {args.datasource_name}")
     print(f"  Query      : {args.peoplesoft_query_name}")
+    print(f"  Query mode : {query_mode_note}")
     print(f"  Page size  : {args.page_size} records/page")
     print(f"  Page delay : {args.page_delay}s")
     _timeout_val = args.request_timeout or int(os.getenv("PEOPLESOFT_REQUEST_TIMEOUT", "") or REQUEST_TIMEOUT_SECONDS)
