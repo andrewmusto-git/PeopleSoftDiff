@@ -711,13 +711,21 @@ def build_oaa_payload(
     app.add_custom_permission("department_member",  [OAAPermission.DataRead])
 
     # --- Custom property definitions for local users ---
+    # NOTE (2026-08-05): 42 properties below are commented out because Veza's OAA API returned
+    # HTTP 400 "Too many property values in request" for every user when all 94 fields were
+    # enabled.  The active set (52 fields) is the highest-value subset for identity governance.
+    # When Veza raises the per-user property limit, search for "Veza per-user property limit"
+    # in this file to find and uncomment both the definition and the set_property call for each.
     for prop_name in (
         "emplid",           "empl_rcd",          "empl_status_code",
         "empl_status_desc", "empl_type",          "per_org",
         "hire_date",        "last_date_worked",   "department_id",
         "department_name",  "company",            "company_name",
-        "business_unit",    "business_unit_two",  "business_descr",
-        "location",         "location_descr",     "location_city_descr",
+        "business_unit",
+        # "business_unit_two",   # PS: BUSINESS_UNIT2        — Veza per-user property limit
+        "business_descr",
+        "location",         "location_descr",
+        # "location_city_descr", # PS: DESCR3               — Veza per-user property limit
         "position_nbr",
         "job_code",         "job_code_descr",     "job_indicator",
         "manager_id",       "sfhr_mgr",           "lan_id",
@@ -727,22 +735,52 @@ def build_oaa_payload(
         "legal_hold",       "acquisition",        "white_jobcd",
         "action",           "action_dt",          "action_reason",
         "effdt",            "effseq",
-        "address_one",      "address_two",        "address_three",    "address_four",
-        "city",             "state",              "postal",
-        "country",          "country_code",       "house_type",
-        "phone",            "phone_one",          "phone_two",
-        "first_name",       "last_name",          "pref_first_name",  "pref_last_name",
-        "second_last_name", "name_initials",      "name_suffix",      "name_royal_prefix",
+        # "address_one",         # PS: ADDRESS1             — Veza per-user property limit
+        # "address_two",         # PS: ADDRESS2             — Veza per-user property limit
+        # "address_three",       # PS: ADDRESS3             — Veza per-user property limit
+        # "address_four",        # PS: ADDRESS4             — Veza per-user property limit
+        # "city",                # PS: CITY                 — Veza per-user property limit
+        # "state",               # PS: STATE                — Veza per-user property limit
+        # "postal",              # PS: POSTAL               — Veza per-user property limit
+        # "country",             # PS: COUNTRY              — Veza per-user property limit
+        # "country_code",        # PS: COUNTRY_CODE         — Veza per-user property limit
+        # "house_type",          # PS: HOUSE_TYPE           — Veza per-user property limit
+        "phone",
+        # "phone_one",           # PS: PHONE1               — Veza per-user property limit
+        # "phone_two",           # PS: PHONE2               — Veza per-user property limit
+        "first_name",       "last_name",
+        # "pref_first_name",     # PS: PREF_FIRST_NAME      — Veza per-user property limit
+        # "pref_last_name",      # PS: ZPS_PREF_LAST_NAME   — Veza per-user property limit
+        # "second_last_name",    # PS: SECOND_LAST_NAME     — Veza per-user property limit
+        # "name_initials",       # PS: NAME_INITIALS        — Veza per-user property limit
+        # "name_suffix",         # PS: NAME_SUFFIX          — Veza per-user property limit
+        # "name_royal_prefix",   # PS: NAME_ROYAL_PREFIX    — Veza per-user property limit
         "lang_cd",          "gl_expense",         "setid_dept",
-        "setid_jobcode",    "setid_location",
-        "nee_provider_id",  "nee_prov_descr",
-        "num_one",          "num_two",
+        # "setid_jobcode",       # PS: SETID_JOBCODE        — Veza per-user property limit
+        # "setid_location",      # PS: SETID_LOCATION       — Veza per-user property limit
+        "nee_provider_id",
+        # "nee_prov_descr",      # PS: ZPS_NEE_PROV_DESCR   — Veza per-user property limit
+        # "num_one",             # PS: NUM1                 — Veza per-user property limit
+        # "num_two",             # PS: NUM2                 — Veza per-user property limit
         "mgr_l_one_lan_id", "mgr_l_two_lan_id",   "mgr_l_three_lan_id", "mgr_l_four_lan_id",
-        "mgr_l_five_lan_id", "mgr_l_six_lan_id",  "mgr_l_seven_lan_id", "mgr_l_eight_lan_id",
-        "mgr_l_nine_lan_id", "mgr_l_ten_lan_id",
-        "mim_cust_dt_one",  "mim_cust_dt_two",    "mim_cust_dt_three", "mim_cust_dt_four",
-        "mim_cust_nbr_one", "mim_cust_nbr_two",   "mim_cust_nbr_three", "mim_cust_nbr_four",
-        "mim_cust_str_one", "mim_cust_str_two",   "mim_cust_str_three", "mim_cust_str_four",
+        "mgr_l_five_lan_id",
+        # "mgr_l_six_lan_id",   # PS: ZPS_MGR_L6_LAN_ID    — Veza per-user property limit
+        # "mgr_l_seven_lan_id", # PS: ZPS_MGR_L7_LAN_ID    — Veza per-user property limit
+        # "mgr_l_eight_lan_id", # PS: ZPS_MGR_L8_LAN_ID    — Veza per-user property limit
+        # "mgr_l_nine_lan_id",  # PS: ZPS_MGR_L9_LAN_ID    — Veza per-user property limit
+        # "mgr_l_ten_lan_id",   # PS: ZPS_MGR_L10_LAN_ID   — Veza per-user property limit
+        # "mim_cust_dt_one",    # PS: ZPS_MIM_CUST_DT1     — Veza per-user property limit
+        # "mim_cust_dt_two",    # PS: ZPS_MIM_CUST_DT2     — Veza per-user property limit
+        # "mim_cust_dt_three",  # PS: ZPS_MIM_CUST_DT3     — Veza per-user property limit
+        # "mim_cust_dt_four",   # PS: ZPS_MIM_CUST_DT4     — Veza per-user property limit
+        # "mim_cust_nbr_one",   # PS: ZPS_MIM_CUST_NBR1    — Veza per-user property limit
+        # "mim_cust_nbr_two",   # PS: ZPS_MIM_CUST_NBR2    — Veza per-user property limit
+        # "mim_cust_nbr_three", # PS: ZPS_MIM_CUST_NBR3    — Veza per-user property limit
+        # "mim_cust_nbr_four",  # PS: ZPS_MIM_CUST_NBR4    — Veza per-user property limit
+        # "mim_cust_str_one",   # PS: ZPS_MIM_CUST_STR1    — Veza per-user property limit
+        # "mim_cust_str_two",   # PS: ZPS_MIM_CUST_STR2    — Veza per-user property limit
+        # "mim_cust_str_three", # PS: ZPS_MIM_CUST_STR3    — Veza per-user property limit
+        # "mim_cust_str_four",  # PS: ZPS_MIM_CUST_STR4    — Veza per-user property limit
     ):
         app.property_definitions.define_local_user_property(prop_name, OAAPropertyType.STRING)
     log.debug("Registered custom user properties")
@@ -850,11 +888,11 @@ def build_oaa_payload(
             user.set_property("company",           emp.get("COMPANY",            ""))
             user.set_property("company_name",      emp.get("DESCR30",            ""))
             user.set_property("business_unit",     emp.get("BUSINESS_UNIT",      ""))
-            user.set_property("business_unit_two", emp.get("BUSINESS_UNIT2",     ""))
+            # user.set_property("business_unit_two", emp.get("BUSINESS_UNIT2",  ""))  # Veza per-user property limit
             user.set_property("business_descr",    emp.get("BUSINESS_DESCR",     ""))
             user.set_property("location",          emp.get("LOCATION",           ""))
             user.set_property("location_descr",    emp.get("DESCR1",             ""))
-            user.set_property("location_city_descr", emp.get("DESCR3",            ""))
+            # user.set_property("location_city_descr", emp.get("DESCR3",         ""))  # Veza per-user property limit
             user.set_property("position_nbr",      emp.get("POSITION_NBR",       ""))
             user.set_property("job_code",          emp.get("JOBCODE",            ""))
             user.set_property("job_code_descr",    emp.get("DESCR2",             ""))
@@ -879,58 +917,58 @@ def build_oaa_payload(
             user.set_property("action_reason",     emp.get("ACTION_REASON",      ""))
             user.set_property("effdt",             emp.get("EFFDT",              ""))
             user.set_property("effseq",            emp.get("EFFSEQ",             ""))
-            user.set_property("address_one",       emp.get("ADDRESS1",           ""))
-            user.set_property("address_two",       emp.get("ADDRESS2",           ""))
-            user.set_property("address_three",     emp.get("ADDRESS3",           ""))
-            user.set_property("address_four",      emp.get("ADDRESS4",           ""))
-            user.set_property("city",              emp.get("CITY",               ""))
-            user.set_property("state",             emp.get("STATE",              ""))
-            user.set_property("postal",            emp.get("POSTAL",             ""))
-            user.set_property("country",           emp.get("COUNTRY",            ""))
-            user.set_property("country_code",      emp.get("COUNTRY_CODE",       ""))
-            user.set_property("house_type",        emp.get("HOUSE_TYPE",         ""))
+            # user.set_property("address_one",    emp.get("ADDRESS1",           ""))  # Veza per-user property limit
+            # user.set_property("address_two",    emp.get("ADDRESS2",           ""))  # Veza per-user property limit
+            # user.set_property("address_three",  emp.get("ADDRESS3",           ""))  # Veza per-user property limit
+            # user.set_property("address_four",   emp.get("ADDRESS4",           ""))  # Veza per-user property limit
+            # user.set_property("city",           emp.get("CITY",               ""))  # Veza per-user property limit
+            # user.set_property("state",          emp.get("STATE",              ""))  # Veza per-user property limit
+            # user.set_property("postal",         emp.get("POSTAL",             ""))  # Veza per-user property limit
+            # user.set_property("country",        emp.get("COUNTRY",            ""))  # Veza per-user property limit
+            # user.set_property("country_code",   emp.get("COUNTRY_CODE",       ""))  # Veza per-user property limit
+            # user.set_property("house_type",     emp.get("HOUSE_TYPE",         ""))  # Veza per-user property limit
             user.set_property("phone",             emp.get("PHONE",              ""))
-            user.set_property("phone_one",         emp.get("PHONE1",             ""))
-            user.set_property("phone_two",         emp.get("PHONE2",             ""))
+            # user.set_property("phone_one",      emp.get("PHONE1",             ""))  # Veza per-user property limit
+            # user.set_property("phone_two",      emp.get("PHONE2",             ""))  # Veza per-user property limit
             user.set_property("first_name",        emp.get("FIRST_NAME",         ""))
             user.set_property("last_name",         emp.get("LAST_NAME",          ""))
-            user.set_property("pref_first_name",   emp.get("PREF_FIRST_NAME",    ""))
-            user.set_property("pref_last_name",    emp.get("ZPS_PREF_LAST_NAME", ""))
-            user.set_property("second_last_name",  emp.get("SECOND_LAST_NAME",   ""))
-            user.set_property("name_initials",     emp.get("NAME_INITIALS",      ""))
-            user.set_property("name_suffix",       emp.get("NAME_SUFFIX",        ""))
-            user.set_property("name_royal_prefix", emp.get("NAME_ROYAL_PREFIX",  ""))
+            # user.set_property("pref_first_name", emp.get("PREF_FIRST_NAME",   ""))  # Veza per-user property limit
+            # user.set_property("pref_last_name",  emp.get("ZPS_PREF_LAST_NAME",""))  # Veza per-user property limit
+            # user.set_property("second_last_name", emp.get("SECOND_LAST_NAME", ""))  # Veza per-user property limit
+            # user.set_property("name_initials",  emp.get("NAME_INITIALS",      ""))  # Veza per-user property limit
+            # user.set_property("name_suffix",    emp.get("NAME_SUFFIX",        ""))  # Veza per-user property limit
+            # user.set_property("name_royal_prefix", emp.get("NAME_ROYAL_PREFIX","")) # Veza per-user property limit
             user.set_property("lang_cd",           emp.get("LANG_CD",            ""))
             user.set_property("gl_expense",        emp.get("GL_EXPENSE",         ""))
             user.set_property("setid_dept",        emp.get("SETID_DEPT",         ""))
-            user.set_property("setid_jobcode",     emp.get("SETID_JOBCODE",      ""))
-            user.set_property("setid_location",    emp.get("SETID_LOCATION",     ""))
+            # user.set_property("setid_jobcode",  emp.get("SETID_JOBCODE",      ""))  # Veza per-user property limit
+            # user.set_property("setid_location", emp.get("SETID_LOCATION",     ""))  # Veza per-user property limit
             user.set_property("nee_provider_id",   emp.get("NEE_PROVIDER_ID",    ""))
-            user.set_property("nee_prov_descr",    emp.get("ZPS_NEE_PROV_DESCR", ""))
-            user.set_property("num_one",           emp.get("NUM1",               ""))
-            user.set_property("num_two",           emp.get("NUM2",               ""))
+            # user.set_property("nee_prov_descr",  emp.get("ZPS_NEE_PROV_DESCR",""))  # Veza per-user property limit
+            # user.set_property("num_one",        emp.get("NUM1",               ""))  # Veza per-user property limit
+            # user.set_property("num_two",        emp.get("NUM2",               ""))  # Veza per-user property limit
             user.set_property("mgr_l_one_lan_id",  emp.get("ZPS_MGR_L1_LAN_ID",  ""))
             user.set_property("mgr_l_two_lan_id",  emp.get("ZPS_MGR_L2_LAN_ID",  ""))
             user.set_property("mgr_l_three_lan_id", emp.get("ZPS_MGR_L3_LAN_ID", ""))
             user.set_property("mgr_l_four_lan_id", emp.get("ZPS_MGR_L4_LAN_ID",  ""))
             user.set_property("mgr_l_five_lan_id", emp.get("ZPS_MGR_L5_LAN_ID",  ""))
-            user.set_property("mgr_l_six_lan_id",  emp.get("ZPS_MGR_L6_LAN_ID",  ""))
-            user.set_property("mgr_l_seven_lan_id", emp.get("ZPS_MGR_L7_LAN_ID", ""))
-            user.set_property("mgr_l_eight_lan_id", emp.get("ZPS_MGR_L8_LAN_ID", ""))
-            user.set_property("mgr_l_nine_lan_id", emp.get("ZPS_MGR_L9_LAN_ID",  ""))
-            user.set_property("mgr_l_ten_lan_id",  emp.get("ZPS_MGR_L10_LAN_ID", ""))
-            user.set_property("mim_cust_dt_one",   emp.get("ZPS_MIM_CUST_DT1",   ""))
-            user.set_property("mim_cust_dt_two",   emp.get("ZPS_MIM_CUST_DT2",   ""))
-            user.set_property("mim_cust_dt_three", emp.get("ZPS_MIM_CUST_DT3",   ""))
-            user.set_property("mim_cust_dt_four",  emp.get("ZPS_MIM_CUST_DT4",   ""))
-            user.set_property("mim_cust_nbr_one",  emp.get("ZPS_MIM_CUST_NBR1",  ""))
-            user.set_property("mim_cust_nbr_two",  emp.get("ZPS_MIM_CUST_NBR2",  ""))
-            user.set_property("mim_cust_nbr_three", emp.get("ZPS_MIM_CUST_NBR3", ""))
-            user.set_property("mim_cust_nbr_four", emp.get("ZPS_MIM_CUST_NBR4",  ""))
-            user.set_property("mim_cust_str_one",  emp.get("ZPS_MIM_CUST_STR1",  ""))
-            user.set_property("mim_cust_str_two",  emp.get("ZPS_MIM_CUST_STR2",  ""))
-            user.set_property("mim_cust_str_three", emp.get("ZPS_MIM_CUST_STR3", ""))
-            user.set_property("mim_cust_str_four", emp.get("ZPS_MIM_CUST_STR4",  ""))
+            # user.set_property("mgr_l_six_lan_id",  emp.get("ZPS_MGR_L6_LAN_ID",""))  # Veza per-user property limit
+            # user.set_property("mgr_l_seven_lan_id", emp.get("ZPS_MGR_L7_LAN_ID","")) # Veza per-user property limit
+            # user.set_property("mgr_l_eight_lan_id", emp.get("ZPS_MGR_L8_LAN_ID","")) # Veza per-user property limit
+            # user.set_property("mgr_l_nine_lan_id", emp.get("ZPS_MGR_L9_LAN_ID",""))  # Veza per-user property limit
+            # user.set_property("mgr_l_ten_lan_id",  emp.get("ZPS_MGR_L10_LAN_ID","")) # Veza per-user property limit
+            # user.set_property("mim_cust_dt_one",   emp.get("ZPS_MIM_CUST_DT1", ""))  # Veza per-user property limit
+            # user.set_property("mim_cust_dt_two",   emp.get("ZPS_MIM_CUST_DT2", ""))  # Veza per-user property limit
+            # user.set_property("mim_cust_dt_three", emp.get("ZPS_MIM_CUST_DT3", ""))  # Veza per-user property limit
+            # user.set_property("mim_cust_dt_four",  emp.get("ZPS_MIM_CUST_DT4", ""))  # Veza per-user property limit
+            # user.set_property("mim_cust_nbr_one",  emp.get("ZPS_MIM_CUST_NBR1",""))  # Veza per-user property limit
+            # user.set_property("mim_cust_nbr_two",  emp.get("ZPS_MIM_CUST_NBR2",""))  # Veza per-user property limit
+            # user.set_property("mim_cust_nbr_three", emp.get("ZPS_MIM_CUST_NBR3","")) # Veza per-user property limit
+            # user.set_property("mim_cust_nbr_four", emp.get("ZPS_MIM_CUST_NBR4",""))  # Veza per-user property limit
+            # user.set_property("mim_cust_str_one",  emp.get("ZPS_MIM_CUST_STR1",""))  # Veza per-user property limit
+            # user.set_property("mim_cust_str_two",  emp.get("ZPS_MIM_CUST_STR2",""))  # Veza per-user property limit
+            # user.set_property("mim_cust_str_three", emp.get("ZPS_MIM_CUST_STR3","")) # Veza per-user property limit
+            # user.set_property("mim_cust_str_four", emp.get("ZPS_MIM_CUST_STR4",""))  # Veza per-user property limit
 
         # Release raw page data before fetching the next page
         del page
