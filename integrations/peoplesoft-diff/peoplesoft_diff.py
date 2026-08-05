@@ -716,7 +716,7 @@ def build_oaa_payload(
         "empl_status_desc", "empl_type",          "per_org",
         "hire_date",        "last_date_worked",   "department_id",
         "department_name",  "company",            "company_name",
-        "business_unit",    "business_unit2",     "business_descr",
+        "business_unit",    "business_unit_two",  "business_descr",
         "location",         "location_descr",     "location_city_descr",
         "position_nbr",
         "job_code",         "job_code_descr",     "job_indicator",
@@ -727,22 +727,22 @@ def build_oaa_payload(
         "legal_hold",       "acquisition",        "white_jobcd",
         "action",           "action_dt",          "action_reason",
         "effdt",            "effseq",
-        "address1",         "address2",           "address3",         "address4",
+        "address_one",      "address_two",        "address_three",    "address_four",
         "city",             "state",              "postal",
         "country",          "country_code",       "house_type",
-        "phone",            "phone1",             "phone2",
+        "phone",            "phone_one",          "phone_two",
         "first_name",       "last_name",          "pref_first_name",  "pref_last_name",
         "second_last_name", "name_initials",      "name_suffix",      "name_royal_prefix",
         "lang_cd",          "gl_expense",         "setid_dept",
         "setid_jobcode",    "setid_location",
         "nee_provider_id",  "nee_prov_descr",
-        "num1",             "num2",
-        "mgr_l1_lan_id",    "mgr_l2_lan_id",      "mgr_l3_lan_id",    "mgr_l4_lan_id",
-        "mgr_l5_lan_id",    "mgr_l6_lan_id",      "mgr_l7_lan_id",    "mgr_l8_lan_id",
-        "mgr_l9_lan_id",    "mgr_l10_lan_id",
-        "mim_cust_dt1",     "mim_cust_dt2",       "mim_cust_dt3",     "mim_cust_dt4",
-        "mim_cust_nbr1",    "mim_cust_nbr2",      "mim_cust_nbr3",    "mim_cust_nbr4",
-        "mim_cust_str1",    "mim_cust_str2",      "mim_cust_str3",    "mim_cust_str4",
+        "num_one",          "num_two",
+        "mgr_l_one_lan_id", "mgr_l_two_lan_id",   "mgr_l_three_lan_id", "mgr_l_four_lan_id",
+        "mgr_l_five_lan_id", "mgr_l_six_lan_id",  "mgr_l_seven_lan_id", "mgr_l_eight_lan_id",
+        "mgr_l_nine_lan_id", "mgr_l_ten_lan_id",
+        "mim_cust_dt_one",  "mim_cust_dt_two",    "mim_cust_dt_three", "mim_cust_dt_four",
+        "mim_cust_nbr_one", "mim_cust_nbr_two",   "mim_cust_nbr_three", "mim_cust_nbr_four",
+        "mim_cust_str_one", "mim_cust_str_two",   "mim_cust_str_three", "mim_cust_str_four",
     ):
         app.property_definitions.define_local_user_property(prop_name, OAAPropertyType.STRING)
     log.debug("Registered custom user properties")
@@ -850,7 +850,7 @@ def build_oaa_payload(
             user.set_property("company",           emp.get("COMPANY",            ""))
             user.set_property("company_name",      emp.get("DESCR30",            ""))
             user.set_property("business_unit",     emp.get("BUSINESS_UNIT",      ""))
-            user.set_property("business_unit2",    emp.get("BUSINESS_UNIT2",     ""))
+            user.set_property("business_unit_two", emp.get("BUSINESS_UNIT2",     ""))
             user.set_property("business_descr",    emp.get("BUSINESS_DESCR",     ""))
             user.set_property("location",          emp.get("LOCATION",           ""))
             user.set_property("location_descr",    emp.get("DESCR1",             ""))
@@ -879,10 +879,10 @@ def build_oaa_payload(
             user.set_property("action_reason",     emp.get("ACTION_REASON",      ""))
             user.set_property("effdt",             emp.get("EFFDT",              ""))
             user.set_property("effseq",            emp.get("EFFSEQ",             ""))
-            user.set_property("address1",          emp.get("ADDRESS1",           ""))
-            user.set_property("address2",          emp.get("ADDRESS2",           ""))
-            user.set_property("address3",          emp.get("ADDRESS3",           ""))
-            user.set_property("address4",          emp.get("ADDRESS4",           ""))
+            user.set_property("address_one",       emp.get("ADDRESS1",           ""))
+            user.set_property("address_two",       emp.get("ADDRESS2",           ""))
+            user.set_property("address_three",     emp.get("ADDRESS3",           ""))
+            user.set_property("address_four",      emp.get("ADDRESS4",           ""))
             user.set_property("city",              emp.get("CITY",               ""))
             user.set_property("state",             emp.get("STATE",              ""))
             user.set_property("postal",            emp.get("POSTAL",             ""))
@@ -890,8 +890,8 @@ def build_oaa_payload(
             user.set_property("country_code",      emp.get("COUNTRY_CODE",       ""))
             user.set_property("house_type",        emp.get("HOUSE_TYPE",         ""))
             user.set_property("phone",             emp.get("PHONE",              ""))
-            user.set_property("phone1",            emp.get("PHONE1",             ""))
-            user.set_property("phone2",            emp.get("PHONE2",             ""))
+            user.set_property("phone_one",         emp.get("PHONE1",             ""))
+            user.set_property("phone_two",         emp.get("PHONE2",             ""))
             user.set_property("first_name",        emp.get("FIRST_NAME",         ""))
             user.set_property("last_name",         emp.get("LAST_NAME",          ""))
             user.set_property("pref_first_name",   emp.get("PREF_FIRST_NAME",    ""))
@@ -907,30 +907,30 @@ def build_oaa_payload(
             user.set_property("setid_location",    emp.get("SETID_LOCATION",     ""))
             user.set_property("nee_provider_id",   emp.get("NEE_PROVIDER_ID",    ""))
             user.set_property("nee_prov_descr",    emp.get("ZPS_NEE_PROV_DESCR", ""))
-            user.set_property("num1",              emp.get("NUM1",               ""))
-            user.set_property("num2",              emp.get("NUM2",               ""))
-            user.set_property("mgr_l1_lan_id",     emp.get("ZPS_MGR_L1_LAN_ID",  ""))
-            user.set_property("mgr_l2_lan_id",     emp.get("ZPS_MGR_L2_LAN_ID",  ""))
-            user.set_property("mgr_l3_lan_id",     emp.get("ZPS_MGR_L3_LAN_ID",  ""))
-            user.set_property("mgr_l4_lan_id",     emp.get("ZPS_MGR_L4_LAN_ID",  ""))
-            user.set_property("mgr_l5_lan_id",     emp.get("ZPS_MGR_L5_LAN_ID",  ""))
-            user.set_property("mgr_l6_lan_id",     emp.get("ZPS_MGR_L6_LAN_ID",  ""))
-            user.set_property("mgr_l7_lan_id",     emp.get("ZPS_MGR_L7_LAN_ID",  ""))
-            user.set_property("mgr_l8_lan_id",     emp.get("ZPS_MGR_L8_LAN_ID",  ""))
-            user.set_property("mgr_l9_lan_id",     emp.get("ZPS_MGR_L9_LAN_ID",  ""))
-            user.set_property("mgr_l10_lan_id",    emp.get("ZPS_MGR_L10_LAN_ID", ""))
-            user.set_property("mim_cust_dt1",      emp.get("ZPS_MIM_CUST_DT1",   ""))
-            user.set_property("mim_cust_dt2",      emp.get("ZPS_MIM_CUST_DT2",   ""))
-            user.set_property("mim_cust_dt3",      emp.get("ZPS_MIM_CUST_DT3",   ""))
-            user.set_property("mim_cust_dt4",      emp.get("ZPS_MIM_CUST_DT4",   ""))
-            user.set_property("mim_cust_nbr1",     emp.get("ZPS_MIM_CUST_NBR1",  ""))
-            user.set_property("mim_cust_nbr2",     emp.get("ZPS_MIM_CUST_NBR2",  ""))
-            user.set_property("mim_cust_nbr3",     emp.get("ZPS_MIM_CUST_NBR3",  ""))
-            user.set_property("mim_cust_nbr4",     emp.get("ZPS_MIM_CUST_NBR4",  ""))
-            user.set_property("mim_cust_str1",     emp.get("ZPS_MIM_CUST_STR1",  ""))
-            user.set_property("mim_cust_str2",     emp.get("ZPS_MIM_CUST_STR2",  ""))
-            user.set_property("mim_cust_str3",     emp.get("ZPS_MIM_CUST_STR3",  ""))
-            user.set_property("mim_cust_str4",     emp.get("ZPS_MIM_CUST_STR4",  ""))
+            user.set_property("num_one",           emp.get("NUM1",               ""))
+            user.set_property("num_two",           emp.get("NUM2",               ""))
+            user.set_property("mgr_l_one_lan_id",  emp.get("ZPS_MGR_L1_LAN_ID",  ""))
+            user.set_property("mgr_l_two_lan_id",  emp.get("ZPS_MGR_L2_LAN_ID",  ""))
+            user.set_property("mgr_l_three_lan_id", emp.get("ZPS_MGR_L3_LAN_ID", ""))
+            user.set_property("mgr_l_four_lan_id", emp.get("ZPS_MGR_L4_LAN_ID",  ""))
+            user.set_property("mgr_l_five_lan_id", emp.get("ZPS_MGR_L5_LAN_ID",  ""))
+            user.set_property("mgr_l_six_lan_id",  emp.get("ZPS_MGR_L6_LAN_ID",  ""))
+            user.set_property("mgr_l_seven_lan_id", emp.get("ZPS_MGR_L7_LAN_ID", ""))
+            user.set_property("mgr_l_eight_lan_id", emp.get("ZPS_MGR_L8_LAN_ID", ""))
+            user.set_property("mgr_l_nine_lan_id", emp.get("ZPS_MGR_L9_LAN_ID",  ""))
+            user.set_property("mgr_l_ten_lan_id",  emp.get("ZPS_MGR_L10_LAN_ID", ""))
+            user.set_property("mim_cust_dt_one",   emp.get("ZPS_MIM_CUST_DT1",   ""))
+            user.set_property("mim_cust_dt_two",   emp.get("ZPS_MIM_CUST_DT2",   ""))
+            user.set_property("mim_cust_dt_three", emp.get("ZPS_MIM_CUST_DT3",   ""))
+            user.set_property("mim_cust_dt_four",  emp.get("ZPS_MIM_CUST_DT4",   ""))
+            user.set_property("mim_cust_nbr_one",  emp.get("ZPS_MIM_CUST_NBR1",  ""))
+            user.set_property("mim_cust_nbr_two",  emp.get("ZPS_MIM_CUST_NBR2",  ""))
+            user.set_property("mim_cust_nbr_three", emp.get("ZPS_MIM_CUST_NBR3", ""))
+            user.set_property("mim_cust_nbr_four", emp.get("ZPS_MIM_CUST_NBR4",  ""))
+            user.set_property("mim_cust_str_one",  emp.get("ZPS_MIM_CUST_STR1",  ""))
+            user.set_property("mim_cust_str_two",  emp.get("ZPS_MIM_CUST_STR2",  ""))
+            user.set_property("mim_cust_str_three", emp.get("ZPS_MIM_CUST_STR3", ""))
+            user.set_property("mim_cust_str_four", emp.get("ZPS_MIM_CUST_STR4",  ""))
 
         # Release raw page data before fetching the next page
         del page
