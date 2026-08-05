@@ -756,8 +756,12 @@ def build_oaa_payload(
             deptid = emp.get("DEPTID", "").strip()
             if deptid and deptid not in registered_groups:
                 gname = (emp.get("DESCR", "").strip()) or deptid
-                app.add_local_group(name=gname, unique_id=deptid)
-                registered_groups[deptid] = gname
+                # Use deptid as both name and unique_id so that user.add_group()
+                # references the group by the same identifier Veza uses for
+                # unique_id-based lookup.  The human-readable DESCR is preserved
+                # on each user via the department_name custom property.
+                app.add_local_group(name=deptid, unique_id=deptid)
+                registered_groups[deptid] = deptid
 
             first = (emp.get("PREF_FIRST_NAME") or emp.get("FIRST_NAME") or "").strip()
             last  = (emp.get("ZPS_PREF_LAST_NAME") or emp.get("LAST_NAME") or "").strip()
@@ -918,12 +922,22 @@ def push_to_veza(
             application_object=app,
             create_provider=True,
         )
-        if response and response.get("warnings"):
-            for w in response["warnings"]:
+        warnings = (response or {}).get("warnings") or []
+        if warnings:
+            print(f"\nVeza push warnings ({len(warnings)}):", flush=True)
+            for w in warnings:
                 log.warning("Veza warning: %s", w)
+                print(f"  WARNING: {w}", flush=True)
+        else:
+            log.info("Veza push returned no warnings")
+
         log.info(
             "Successfully pushed to Veza — provider=%s datasource=%s",
             provider_name, datasource_name,
+        )
+        print(
+            f"\nVeza push complete — provider='{provider_name}'  datasource='{datasource_name}'",
+            flush=True,
         )
     except OAAClientError as exc:
         log.error(
