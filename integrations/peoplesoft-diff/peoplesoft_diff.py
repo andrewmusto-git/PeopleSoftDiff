@@ -62,6 +62,12 @@ REQUEST_TIMEOUT_SECONDS = 600
 #   - If the PeopleSoft host is fast and well-resourced, raise it (e.g. 3000–5000).
 DEFAULT_PAGE_SIZE = 2000
 
+# Veza enforces per-user payload limits on property values and identifiers.
+# Outlier records with many populated attributes can exceed those limits even
+# when most users are accepted. Keep a conservative cap to prevent HTTP 400.
+MAX_LOCAL_USER_PROPERTY_VALUES = 35
+MAX_LOCAL_USER_IDENTITIES = 4
+
 # Default name for the on-disk staging file written during Phase 1.
 # Each line is a JSON-serialized employee record dict (JSON Lines / JSONL format).
 STAGING_FILE_DEFAULT = "staging_employees.jsonl"
@@ -83,6 +89,9 @@ EMPL_STATUS_DESCRIPTIONS: Dict[str, str] = {
     "Q": "Furloughed",
     "V": "Terminated Pension Pay Out",
 }
+
+_USER_PROPERTY_COUNTS: Dict[int, int] = {}
+_USER_PROPERTY_TRUNCATED: set[int] = set()
 
 # ---------------------------------------------------------------------------
 # XML request body templates
@@ -658,19 +667,36 @@ def _parse_xml_response(xml_text: str) -> List[dict]:
     return employees
 
 
-def _set_local_user_property_if_present(user, property_name: str, raw_value: object) -> None:
+def _set_local_user_property_if_present(user, property_name: str, raw_value: object) -> bool:
     """Set a local-user property only when the value is meaningful.
 
     Veza enforces a per-user property-value limit. Sending large numbers of
-    empty/default placeholders ("", "--") can exceed this limit across the
-    full dataset. This helper keeps payloads lean by omitting empty values.
+    populated attributes on outlier records can exceed this limit and fail the
+    entire push. This helper keeps payloads lean by omitting empty values and
+    capping per-user property emission.
     """
+    user_key = id(user)
+    used = _USER_PROPERTY_COUNTS.get(user_key, 0)
+    if used >= MAX_LOCAL_USER_PROPERTY_VALUES:
+        if user_key not in _USER_PROPERTY_TRUNCATED:
+            log.debug(
+                "Property cap reached for user name=%s unique_id=%s (max=%d); omitting remaining properties",
+                getattr(user, "name", "?"),
+                getattr(user, "unique_id", "?"),
+                MAX_LOCAL_USER_PROPERTY_VALUES,
+            )
+            _USER_PROPERTY_TRUNCATED.add(user_key)
+        return False
+
     if raw_value is None:
-        return
+        return False
     value = str(raw_value).strip()
     if not value or value == "--":
-        return
+        return False
+
     user.set_property(property_name, value)
+    _USER_PROPERTY_COUNTS[user_key] = used + 1
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -716,6 +742,9 @@ def build_oaa_payload(
     The ordering in identities is: primary email, UPN email, LAN ID, legacy
     LAN ID, CMI ID, alternate EMPLID.  Veza will attempt each in turn.
     """
+    _USER_PROPERTY_COUNTS.clear()
+    _USER_PROPERTY_TRUNCATED.clear()
+
     app = CustomApplication(
         name=args.datasource_name,
         application_type=args.provider_name,
@@ -900,6 +929,16 @@ def build_oaa_payload(
             alt_emplid = emp.get("ALTER_EMPLID", "").strip()
             if alt_emplid and alt_emplid not in identities:
                 identities.append(alt_emplid)
+
+            if len(identities) > MAX_LOCAL_USER_IDENTITIES:
+                log.debug(
+                    "Identity cap reached for user %s (%s): keeping first %d of %d identities",
+                    full_name,
+                    emplid,
+                    MAX_LOCAL_USER_IDENTITIES,
+                    len(identities),
+                )
+                identities = identities[:MAX_LOCAL_USER_IDENTITIES]
 
             user = app.add_local_user(
                 name=full_name,
