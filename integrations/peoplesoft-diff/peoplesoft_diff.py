@@ -811,6 +811,11 @@ def build_oaa_payload(
     duplicate_count = 0
     page_num       = 0
     seen_emplids: set[str] = set()
+    # Maps base full_name -> first emplid that used it ("COLLISION" after first duplicate).
+    # Used to append EMPLID suffixes so no two OAA local_users share a display name.
+    # Veza merges property sets for users with identical names, which causes HTTP 400
+    # "Too many property values in request" when two employees share a full name.
+    seen_names: Dict[str, str] = {}
 
     for page in employee_pages:
         page_num += 1
@@ -843,7 +848,31 @@ def build_oaa_payload(
 
             first = (emp.get("PREF_FIRST_NAME") or emp.get("FIRST_NAME") or "").strip()
             last  = (emp.get("ZPS_PREF_LAST_NAME") or emp.get("LAST_NAME") or "").strip()
-            full_name = f"{first} {last}".strip() or emplid
+            full_name_base = f"{first} {last}".strip() or emplid
+
+            # Deduplicate display names: Veza merges property sets for local_users that
+            # share the same name, which triggers HTTP 400 when the combined property
+            # count exceeds Veza's per-name limit.  Append EMPLID suffix on collision.
+            if full_name_base in seen_names:
+                prev_emplid = seen_names[full_name_base]
+                if prev_emplid != "COLLISION":
+                    # First collision: retroactively suffix the earlier user's name
+                    prev_user = app.local_users.get(prev_emplid)
+                    if prev_user is not None:
+                        prev_user.name = f"{full_name_base} ({prev_emplid})"
+                        log.debug(
+                            "Name collision: renamed earlier user '%s' (%s) to include EMPLID suffix",
+                            full_name_base, prev_emplid,
+                        )
+                    seen_names[full_name_base] = "COLLISION"
+                full_name = f"{full_name_base} ({emplid})"
+                log.debug(
+                    "Name collision: user '%s' (%s) assigned EMPLID-suffixed display name",
+                    full_name_base, emplid,
+                )
+            else:
+                seen_names[full_name_base] = emplid
+                full_name = full_name_base
 
             email: Optional[str] = (
                 emp.get("EMAIL_ADDR") or emp.get("ZPS_UPNE_EMAILID") or ""
