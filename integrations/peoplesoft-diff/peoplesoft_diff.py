@@ -658,6 +658,21 @@ def _parse_xml_response(xml_text: str) -> List[dict]:
     return employees
 
 
+def _set_local_user_property_if_present(user, property_name: str, raw_value: object) -> None:
+    """Set a local-user property only when the value is meaningful.
+
+    Veza enforces a per-user property-value limit. Sending large numbers of
+    empty/default placeholders ("", "--") can exceed this limit across the
+    full dataset. This helper keeps payloads lean by omitting empty values.
+    """
+    if raw_value is None:
+        return
+    value = str(raw_value).strip()
+    if not value or value == "--":
+        return
+    user.set_property(property_name, value)
+
+
 # ---------------------------------------------------------------------------
 # OAA payload builder
 # ---------------------------------------------------------------------------
@@ -875,48 +890,52 @@ def build_oaa_payload(
                 user.add_permission("department_member", apply_to_application=True)
 
             # Custom properties
-            user.set_property("emplid",            emplid)
-            user.set_property("empl_rcd",          emp.get("EMPL_RCD",           ""))
-            user.set_property("empl_status_code",  empl_status)
-            user.set_property("empl_status_desc",  EMPL_STATUS_DESCRIPTIONS.get(empl_status, empl_status))
-            user.set_property("empl_type",         emp.get("EMPL_TYPE",          ""))
-            user.set_property("per_org",           emp.get("PER_ORG",            ""))
-            user.set_property("hire_date",         emp.get("HIRE_DT",            ""))
-            user.set_property("last_date_worked",  emp.get("LAST_DATE_WORKED",   ""))
-            user.set_property("department_id",     emp.get("DEPTID",             ""))
-            user.set_property("department_name",   emp.get("DESCR",              ""))
-            user.set_property("company",           emp.get("COMPANY",            ""))
-            user.set_property("company_name",      emp.get("DESCR30",            ""))
-            user.set_property("business_unit",     emp.get("BUSINESS_UNIT",      ""))
+            _set_local_user_property_if_present(user, "emplid", emplid)
+            _set_local_user_property_if_present(user, "empl_rcd", emp.get("EMPL_RCD", ""))
+            _set_local_user_property_if_present(user, "empl_status_code", empl_status)
+            _set_local_user_property_if_present(
+                user,
+                "empl_status_desc",
+                EMPL_STATUS_DESCRIPTIONS.get(empl_status, empl_status),
+            )
+            _set_local_user_property_if_present(user, "empl_type", emp.get("EMPL_TYPE", ""))
+            _set_local_user_property_if_present(user, "per_org", emp.get("PER_ORG", ""))
+            _set_local_user_property_if_present(user, "hire_date", emp.get("HIRE_DT", ""))
+            _set_local_user_property_if_present(user, "last_date_worked", emp.get("LAST_DATE_WORKED", ""))
+            _set_local_user_property_if_present(user, "department_id", emp.get("DEPTID", ""))
+            _set_local_user_property_if_present(user, "department_name", emp.get("DESCR", ""))
+            _set_local_user_property_if_present(user, "company", emp.get("COMPANY", ""))
+            _set_local_user_property_if_present(user, "company_name", emp.get("DESCR30", ""))
+            _set_local_user_property_if_present(user, "business_unit", emp.get("BUSINESS_UNIT", ""))
             # user.set_property("business_unit_two", emp.get("BUSINESS_UNIT2",  ""))  # Veza per-user property limit
-            user.set_property("business_descr",    emp.get("BUSINESS_DESCR",     ""))
-            user.set_property("location",          emp.get("LOCATION",           ""))
-            user.set_property("location_descr",    emp.get("DESCR1",             ""))
+            _set_local_user_property_if_present(user, "business_descr", emp.get("BUSINESS_DESCR", ""))
+            _set_local_user_property_if_present(user, "location", emp.get("LOCATION", ""))
+            _set_local_user_property_if_present(user, "location_descr", emp.get("DESCR1", ""))
             # user.set_property("location_city_descr", emp.get("DESCR3",         ""))  # Veza per-user property limit
-            user.set_property("position_nbr",      emp.get("POSITION_NBR",       ""))
-            user.set_property("job_code",          emp.get("JOBCODE",            ""))
-            user.set_property("job_code_descr",    emp.get("DESCR2",             ""))
-            user.set_property("job_indicator",     emp.get("JOB_INDICATOR",      ""))
-            user.set_property("manager_id",        emp.get("MANAGER_ID",         ""))
-            user.set_property("sfhr_mgr",          emp.get("ZPS_SFHR_MGR",       ""))
-            user.set_property("lan_id",            emp.get("ZPS_LAN_ID",         ""))
-            user.set_property("legacy_lan_id",     emp.get("ZPS_LEG_LANID",      ""))
-            user.set_property("leg_email",         emp.get("ZPS_LEG_EMAIL",      ""))
-            user.set_property("cmi_id",            emp.get("ZPS_CMI_ID",         ""))
-            user.set_property("reg_region",        emp.get("REG_REGION",         ""))
-            user.set_property("segment",           emp.get("ZPS_SEGMENT",        ""))
-            user.set_property("org_group",         emp.get("ZPS_GROUP",          ""))
-            user.set_property("function_code",     emp.get("ZPS_FUNCTION",       ""))
-            user.set_property("div_deptid",        emp.get("ZPS_DIV_DEPTID",     ""))
-            user.set_property("req_it_access",     emp.get("ZPS_REQ_IT_ACCESS",  ""))
-            user.set_property("legal_hold",        emp.get("ZPS_LEGAL_HOLD",     ""))
-            user.set_property("acquisition",       emp.get("ZPS_ACQUISITION",    ""))
-            user.set_property("white_jobcd",       emp.get("ZPS_WHITE_JOBCD",    ""))
-            user.set_property("action",            emp.get("ACTION",             ""))
-            user.set_property("action_dt",         emp.get("ACTION_DT",          ""))
-            user.set_property("action_reason",     emp.get("ACTION_REASON",      ""))
-            user.set_property("effdt",             emp.get("EFFDT",              ""))
-            user.set_property("effseq",            emp.get("EFFSEQ",             ""))
+            _set_local_user_property_if_present(user, "position_nbr", emp.get("POSITION_NBR", ""))
+            _set_local_user_property_if_present(user, "job_code", emp.get("JOBCODE", ""))
+            _set_local_user_property_if_present(user, "job_code_descr", emp.get("DESCR2", ""))
+            _set_local_user_property_if_present(user, "job_indicator", emp.get("JOB_INDICATOR", ""))
+            _set_local_user_property_if_present(user, "manager_id", emp.get("MANAGER_ID", ""))
+            _set_local_user_property_if_present(user, "sfhr_mgr", emp.get("ZPS_SFHR_MGR", ""))
+            _set_local_user_property_if_present(user, "lan_id", emp.get("ZPS_LAN_ID", ""))
+            _set_local_user_property_if_present(user, "legacy_lan_id", emp.get("ZPS_LEG_LANID", ""))
+            _set_local_user_property_if_present(user, "leg_email", emp.get("ZPS_LEG_EMAIL", ""))
+            _set_local_user_property_if_present(user, "cmi_id", emp.get("ZPS_CMI_ID", ""))
+            _set_local_user_property_if_present(user, "reg_region", emp.get("REG_REGION", ""))
+            _set_local_user_property_if_present(user, "segment", emp.get("ZPS_SEGMENT", ""))
+            _set_local_user_property_if_present(user, "org_group", emp.get("ZPS_GROUP", ""))
+            _set_local_user_property_if_present(user, "function_code", emp.get("ZPS_FUNCTION", ""))
+            _set_local_user_property_if_present(user, "div_deptid", emp.get("ZPS_DIV_DEPTID", ""))
+            _set_local_user_property_if_present(user, "req_it_access", emp.get("ZPS_REQ_IT_ACCESS", ""))
+            _set_local_user_property_if_present(user, "legal_hold", emp.get("ZPS_LEGAL_HOLD", ""))
+            _set_local_user_property_if_present(user, "acquisition", emp.get("ZPS_ACQUISITION", ""))
+            _set_local_user_property_if_present(user, "white_jobcd", emp.get("ZPS_WHITE_JOBCD", ""))
+            _set_local_user_property_if_present(user, "action", emp.get("ACTION", ""))
+            _set_local_user_property_if_present(user, "action_dt", emp.get("ACTION_DT", ""))
+            _set_local_user_property_if_present(user, "action_reason", emp.get("ACTION_REASON", ""))
+            _set_local_user_property_if_present(user, "effdt", emp.get("EFFDT", ""))
+            _set_local_user_property_if_present(user, "effseq", emp.get("EFFSEQ", ""))
             # user.set_property("address_one",    emp.get("ADDRESS1",           ""))  # Veza per-user property limit
             # user.set_property("address_two",    emp.get("ADDRESS2",           ""))  # Veza per-user property limit
             # user.set_property("address_three",  emp.get("ADDRESS3",           ""))  # Veza per-user property limit
@@ -927,31 +946,31 @@ def build_oaa_payload(
             # user.set_property("country",        emp.get("COUNTRY",            ""))  # Veza per-user property limit
             # user.set_property("country_code",   emp.get("COUNTRY_CODE",       ""))  # Veza per-user property limit
             # user.set_property("house_type",     emp.get("HOUSE_TYPE",         ""))  # Veza per-user property limit
-            user.set_property("phone",             emp.get("PHONE",              ""))
+            _set_local_user_property_if_present(user, "phone", emp.get("PHONE", ""))
             # user.set_property("phone_one",      emp.get("PHONE1",             ""))  # Veza per-user property limit
             # user.set_property("phone_two",      emp.get("PHONE2",             ""))  # Veza per-user property limit
-            user.set_property("first_name",        emp.get("FIRST_NAME",         ""))
-            user.set_property("last_name",         emp.get("LAST_NAME",          ""))
+            _set_local_user_property_if_present(user, "first_name", emp.get("FIRST_NAME", ""))
+            _set_local_user_property_if_present(user, "last_name", emp.get("LAST_NAME", ""))
             # user.set_property("pref_first_name", emp.get("PREF_FIRST_NAME",   ""))  # Veza per-user property limit
             # user.set_property("pref_last_name",  emp.get("ZPS_PREF_LAST_NAME",""))  # Veza per-user property limit
             # user.set_property("second_last_name", emp.get("SECOND_LAST_NAME", ""))  # Veza per-user property limit
             # user.set_property("name_initials",  emp.get("NAME_INITIALS",      ""))  # Veza per-user property limit
             # user.set_property("name_suffix",    emp.get("NAME_SUFFIX",        ""))  # Veza per-user property limit
             # user.set_property("name_royal_prefix", emp.get("NAME_ROYAL_PREFIX","")) # Veza per-user property limit
-            user.set_property("lang_cd",           emp.get("LANG_CD",            ""))
-            user.set_property("gl_expense",        emp.get("GL_EXPENSE",         ""))
-            user.set_property("setid_dept",        emp.get("SETID_DEPT",         ""))
+            _set_local_user_property_if_present(user, "lang_cd", emp.get("LANG_CD", ""))
+            _set_local_user_property_if_present(user, "gl_expense", emp.get("GL_EXPENSE", ""))
+            _set_local_user_property_if_present(user, "setid_dept", emp.get("SETID_DEPT", ""))
             # user.set_property("setid_jobcode",  emp.get("SETID_JOBCODE",      ""))  # Veza per-user property limit
             # user.set_property("setid_location", emp.get("SETID_LOCATION",     ""))  # Veza per-user property limit
-            user.set_property("nee_provider_id",   emp.get("NEE_PROVIDER_ID",    ""))
+            _set_local_user_property_if_present(user, "nee_provider_id", emp.get("NEE_PROVIDER_ID", ""))
             # user.set_property("nee_prov_descr",  emp.get("ZPS_NEE_PROV_DESCR",""))  # Veza per-user property limit
             # user.set_property("num_one",        emp.get("NUM1",               ""))  # Veza per-user property limit
             # user.set_property("num_two",        emp.get("NUM2",               ""))  # Veza per-user property limit
-            user.set_property("mgr_l_one_lan_id",  emp.get("ZPS_MGR_L1_LAN_ID",  ""))
-            user.set_property("mgr_l_two_lan_id",  emp.get("ZPS_MGR_L2_LAN_ID",  ""))
-            user.set_property("mgr_l_three_lan_id", emp.get("ZPS_MGR_L3_LAN_ID", ""))
-            user.set_property("mgr_l_four_lan_id", emp.get("ZPS_MGR_L4_LAN_ID",  ""))
-            user.set_property("mgr_l_five_lan_id", emp.get("ZPS_MGR_L5_LAN_ID",  ""))
+            _set_local_user_property_if_present(user, "mgr_l_one_lan_id", emp.get("ZPS_MGR_L1_LAN_ID", ""))
+            _set_local_user_property_if_present(user, "mgr_l_two_lan_id", emp.get("ZPS_MGR_L2_LAN_ID", ""))
+            _set_local_user_property_if_present(user, "mgr_l_three_lan_id", emp.get("ZPS_MGR_L3_LAN_ID", ""))
+            _set_local_user_property_if_present(user, "mgr_l_four_lan_id", emp.get("ZPS_MGR_L4_LAN_ID", ""))
+            _set_local_user_property_if_present(user, "mgr_l_five_lan_id", emp.get("ZPS_MGR_L5_LAN_ID", ""))
             # user.set_property("mgr_l_six_lan_id",  emp.get("ZPS_MGR_L6_LAN_ID",""))  # Veza per-user property limit
             # user.set_property("mgr_l_seven_lan_id", emp.get("ZPS_MGR_L7_LAN_ID","")) # Veza per-user property limit
             # user.set_property("mgr_l_eight_lan_id", emp.get("ZPS_MGR_L8_LAN_ID","")) # Veza per-user property limit
