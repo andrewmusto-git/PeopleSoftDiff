@@ -1661,6 +1661,16 @@ def main() -> None:
     employee_pages = stream_known_employee_pages(known_employees, batch_size=args.page_size)
     app = build_oaa_payload(employee_pages, args)
 
+    # Free the raw known-employee state (109k+ full records on large populations)
+    # now that the OAA payload has been built from it. Without this, the process
+    # holds BOTH the raw record set AND the fully-built CustomApplication object
+    # in memory at the same moment push_to_veza() serializes the payload for the
+    # HTTP POST — the combined peak can exceed available RAM and trigger the
+    # Linux OOM killer (observed as a bare "Killed" message with no traceback,
+    # since SIGKILL gives the process no chance to catch or log the failure).
+    del known_employees, employee_pages
+    gc.collect()
+
     # Sanity check: if the app has no users the stream returned nothing
     user_count = len(getattr(app, "local_users", {}))
     if user_count == 0:
