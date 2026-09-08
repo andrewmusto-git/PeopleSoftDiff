@@ -1456,7 +1456,8 @@ def _prompt_query_selection(current: str) -> str:
 
     Called only when the query was not pre-set via --peoplesoft-query-name
     or PEOPLESOFT_QUERY_NAME env var (i.e. still equal to the compiled-in
-    default).  Keeps non-interactive / scheduled runs fully automatic.
+    default) AND stdin is an interactive TTY. Cron / scheduled runs never
+    reach this function — see the caller's guard in main().
     """
     print()
     print("  Which PeopleSoft query do you want to run?")
@@ -1487,6 +1488,17 @@ def _prompt_query_selection(current: str) -> str:
 def main() -> None:
     args = _parse_args()
     _setup_logging(args.log_level)
+
+    # Load .env as early as possible so PEOPLESOFT_QUERY_NAME (and any other
+    # env-provided setting) is visible to os.getenv() below. load_config()
+    # also loads it later for the full config dict, but that happens AFTER
+    # the interactive query-selection gate — without this early load, a
+    # PEOPLESOFT_QUERY_NAME set only in .env (not exported in the shell/cron
+    # environment) would be invisible to that gate, forcing every
+    # non-interactive / cron run into the interactive prompt below.
+    _early_env_file = getattr(args, "env_file", None) or ".env"
+    if os.path.exists(_early_env_file):
+        load_dotenv(_early_env_file)
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
     staging_path = args.staging_file or os.path.join(script_dir, STAGING_FILE_DEFAULT)
@@ -1520,6 +1532,7 @@ def main() -> None:
         and not env_query
         and cli_query == DEFAULT_QUERY_NAME
         and not args.skip_fetch
+        and sys.stdin.isatty()
     ):
         print("=" * 60)
         print("  PeopleSoft Diff -> Veza OAA Integration")
