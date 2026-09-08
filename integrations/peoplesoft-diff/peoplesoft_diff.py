@@ -72,6 +72,17 @@ MAX_LOCAL_USER_IDENTITIES = 4
 # Each line is a JSON-serialized employee record dict (JSON Lines / JSONL format).
 STAGING_FILE_DEFAULT = "staging_employees.jsonl"
 
+# Default name for the persistent known-employee state file.  Unlike the staging
+# file (which only ever holds the most recent fetch), this file accumulates the
+# full population across runs. Differential runs MERGE their fetched records
+# into this file (new EMPLIDs are added, existing EMPLIDs are updated, and every
+# other previously-known EMPLID is left untouched); full-sync runs REPLACE it
+# entirely with the fresh baseline. This is what build_oaa_payload() is built
+# from, ensuring a differential push never causes Veza to drop users who simply
+# had no changes this cycle (Veza's push_application call replaces the entire
+# datasource's contents on every push).
+STATE_FILE_DEFAULT = "known_employees.jsonl"
+
 # EMPL_STATUS codes where the employee is considered active for access purposes.
 # A=Active, L=Leave of Absence, P=Leave With Pay, S=Short Work Break
 ACTIVE_STATUS_CODES: frozenset = frozenset({"A", "L", "P", "S"})
@@ -527,6 +538,138 @@ def fetch_to_staging(
     log.info("Phase 1 complete: %d records written to %s", total_written, staging_path)
     print(f"  [{ts}] Phase 1 complete: {total_written:,} records staged to disk\n")
     return total_written
+
+
+# ---------------------------------------------------------------------------
+# Persistent known-employee state (differential merge / full-sync replace)
+# ---------------------------------------------------------------------------
+
+def load_known_employees(state_path: str) -> Dict[str, dict]:
+    """Load the persistent known-employee state file into memory.
+
+    Returns a dict keyed by EMPLID. Returns an empty dict if the state file
+    does not exist yet (e.g. first run).
+    """
+    known: Dict[str, dict] = {}
+    if not os.path.exists(state_path):
+        return known
+
+    with open(state_path, "r", encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError as exc:
+                log.warning("Skipping malformed state-file line: %s", exc)
+                continue
+            emplid = str(record.get("EMPLID", "")).strip()
+            if emplid:
+                known[emplid] = record
+
+    log.debug("Loaded %d known employees from state file: %s", len(known), state_path)
+    return known
+
+
+def write_known_employees(state_path: str, known: Dict[str, dict]) -> None:
+    """Atomically write the known-employee state to disk.
+
+    Writes to a temp file first and renames into place so a crash mid-write
+    never leaves a corrupt or partial state file behind.
+    """
+    tmp_path = state_path + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as fh:
+        for record in known.values():
+            fh.write(json.dumps(record, ensure_ascii=False))
+            fh.write("\n")
+    os.replace(tmp_path, state_path)
+
+
+def merge_delta_into_state(
+    staging_path: str,
+    state_path: str,
+    full_replace: bool = False,
+) -> Dict[str, dict]:
+    """Merge freshly-fetched records into the persistent known-employee state.
+
+    Differential mode (full_replace=False):
+        Loads the existing known-employee state, then adds/overwrites entries
+        for every EMPLID present in the fetched delta. Every other
+        previously-known EMPLID is left completely untouched, so a
+        differential push never drops users who had no changes this cycle.
+
+    Full-sync mode (full_replace=True):
+        Treats the fetch as the authoritative complete population and
+        replaces the state file entirely with the fresh data.
+
+    The merged state is persisted to *state_path* and also returned.
+    """
+    known: Dict[str, dict] = {} if full_replace else load_known_employees(state_path)
+
+    new_count = 0
+    updated_count = 0
+
+    with open(staging_path, "r", encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError as exc:
+                log.warning("Skipping malformed staging line during state merge: %s", exc)
+                continue
+            emplid = str(record.get("EMPLID", "")).strip()
+            if not emplid:
+                continue
+            if emplid in known:
+                updated_count += 1
+            else:
+                new_count += 1
+            known[emplid] = record
+
+    write_known_employees(state_path, known)
+
+    if full_replace:
+        log.info(
+            "State file replaced (full sync): %d total employees written to %s",
+            len(known), state_path,
+        )
+        print(
+            f"  Full sync   : state file replaced — {len(known):,} total employees"
+        )
+    else:
+        log.info(
+            "State file merged (differential): %d new, %d updated, %d total known -> %s",
+            new_count, updated_count, len(known), state_path,
+        )
+        print(
+            f"  Differential: {new_count:,} new, {updated_count:,} updated, "
+            f"{len(known):,} total known employees (unchanged users preserved)"
+        )
+
+    return known
+
+
+def stream_known_employee_pages(
+    known: Dict[str, dict],
+    batch_size: int = DEFAULT_PAGE_SIZE,
+) -> Generator[List[dict], None, None]:
+    """Yield batches of employee records from the in-memory known-employee state.
+
+    Mirrors the batch shape produced by stream_staging_pages/stream_employee_pages
+    so build_oaa_payload() consumes it unchanged, but sources data from the full
+    persistent known-employee population rather than only the latest delta.
+    """
+    batch: List[dict] = []
+    for record in known.values():
+        batch.append(record)
+        if len(batch) >= batch_size:
+            yield batch
+            batch = []
+    if batch:
+        yield batch
 
 
 # ---------------------------------------------------------------------------
@@ -1280,6 +1423,18 @@ def _parse_args() -> argparse.Namespace:
         ),
     )
     run.add_argument(
+        "--state-file",
+        metavar="PATH",
+        default=None,
+        help=(
+            f"Path to the persistent known-employee state file "
+            f"(default: <script_dir>/{STATE_FILE_DEFAULT}).  "
+            f"Differential runs MERGE fetched records into this file so users with no "
+            f"changes are never dropped from the Veza push; full-sync runs REPLACE it "
+            f"entirely with the fresh baseline."
+        ),
+    )
+    run.add_argument(
         "--force-full-sync-once",
         action="store_true",
         help=(
@@ -1335,6 +1490,7 @@ def main() -> None:
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
     staging_path = args.staging_file or os.path.join(script_dir, STAGING_FILE_DEFAULT)
+    state_path = args.state_file or os.path.join(script_dir, STATE_FILE_DEFAULT)
     query_mode_note = "Configured"
 
     # ---- One-time full sync override ----------------------------------
@@ -1390,6 +1546,7 @@ def main() -> None:
     _timeout_val = args.request_timeout or int(os.getenv("PEOPLESOFT_REQUEST_TIMEOUT", "") or REQUEST_TIMEOUT_SECONDS)
     print(f"  API timeout: {_timeout_val}s per page")
     print(f"  Staging    : {staging_path}")
+    print(f"  State file : {state_path}")
     print(f"  Skip fetch : {args.skip_fetch}")
     print(f"  Dry-run    : {args.dry_run}")
     print(f"  Save JSON  : {args.save_json}")
@@ -1447,26 +1604,48 @@ def main() -> None:
         sys.exit(0)
 
     # ------------------------------------------------------------------
-    # Phase 2 — Build OAA payload from ALL staged records, then push
+    # Merge the fetched delta into the persistent known-employee state.
+    # Differential runs MERGE (add/update only — no EMPLID is ever removed);
+    # full-sync runs REPLACE the state entirely with the fresh baseline.
+    # ------------------------------------------------------------------
+    is_full_sync = (args.peoplesoft_query_name == QUERY_FULL_SYNC)
+    print(
+        f"\n{'=' * 60}\n"
+        f"  State Merge — {'Full replace' if is_full_sync else 'Differential merge (no users removed)'}\n"
+        f"  State file  : {state_path}\n"
+        f"{'=' * 60}"
+    )
+    log.info(
+        "Merging fetched delta into known-employee state (full_replace=%s): %s",
+        is_full_sync, state_path,
+    )
+    known_employees = merge_delta_into_state(
+        staging_path=staging_path,
+        state_path=state_path,
+        full_replace=is_full_sync,
+    )
+    total_known = len(known_employees)
+    print(f"{'=' * 60}\n")
+
+    # ------------------------------------------------------------------
+    # Phase 2 — Build OAA payload from the FULL known-employee state, then push
     # ------------------------------------------------------------------
     import math
-    total_batches = math.ceil(total_records / args.page_size)
+    total_batches = math.ceil(total_known / args.page_size)
     print(
         f"\n{'=' * 60}\n"
         f"  Phase 2 — Build & Push OAA Payload\n"
-        f"  Total records  : {total_records:,}\n"
+        f"  Total known employees : {total_known:,}\n"
         f"  Batch size     : {args.page_size:,} records/batch\n"
         f"  Total batches  : {total_batches:,}\n"
         f"{'=' * 60}\n"
     )
     log.info(
-        "Phase 2 — building OAA payload: %d records across %d batch(es)",
-        total_records, total_batches,
+        "Phase 2 — building OAA payload: %d known employees across %d batch(es)",
+        total_known, total_batches,
     )
 
-    employee_pages = stream_staging_pages(
-        staging_path, batch_size=args.page_size, total_records=total_records
-    )
+    employee_pages = stream_known_employee_pages(known_employees, batch_size=args.page_size)
     app = build_oaa_payload(employee_pages, args)
 
     # Sanity check: if the app has no users the stream returned nothing

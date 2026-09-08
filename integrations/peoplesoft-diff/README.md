@@ -177,6 +177,7 @@ usage: peoplesoft_diff.py [-h] [--peoplesoft-url URL] [--peoplesoft-username USE
 | `--dry-run` | No | `false` | Build payload without pushing |
 | `--save-json` | No | `false` | Save payload JSON for inspection |
 | `--log-level` | No | `INFO` | Log verbosity |
+| `--state-file` | No | `known_employees.jsonl` | Persistent known-employee state file. Differential runs merge fetched records into it (adds/updates only, never removes); full-sync runs replace it entirely. This is what each push is built from, so unchanged users are never dropped. |
 
 *Required via CLI flag, environment variable, or `.env` file.
 
